@@ -1,27 +1,87 @@
 # Alert Sage
 
-Alert Sage 是一个面向运维场景的 AI 告警诊断助手。项目以“告警接入 → 上下文采集 → 根因分析 → 人工确认 → 案例沉淀”为主线，并提供可追溯的运维知识问答能力。
+Alert Sage 是一个面向运维场景的 AI 告警诊断助手，以“告警接入 → 上下文采集 → 根因分析 → 人工确认 → 案例沉淀”为核心链路。
 
-当前仓库处于设计阶段，目标是完成一个用于求职展示的准生产级 MVP：核心链路真实可运行，关键状态可恢复，异常路径可观测，同时避免为了技术栈数量过早引入微服务和 Kubernetes。
+项目定位是用于求职展示的准生产级 MVP：核心流程真实可运行，状态可恢复，异常可观测，同时避免为了堆叠技术栈过早引入微服务和 Kubernetes。
 
-## 第一版目标
+## 当前状态
 
-- 通过 Web 页面创建和查看模拟告警。
-- 使用 LangGraph 编排告警诊断工作流。
-- 并发查询指标、日志、CMDB 和历史案例工具。
-- 在 Web 页面批准、驳回或要求重新分析。
-- 服务重启后能够从 PostgreSQL checkpoint 恢复工作流。
-- 将确认后的诊断结果沉淀为可检索案例。
-- 使用 Dify 提供第一版知识库检索能力。
-- 提供结构化日志、Prometheus 指标和节点执行记录。
+`V0 工程骨架`：已建立 FastAPI、React、PostgreSQL、Redis、Alembic、测试与 Docker Compose 基础设施。当前只实现健康检查和 `alerts` 表迁移，告警 CRUD 与 LangGraph 工作流将在 V1 开始实现。
 
-## 文档导航
+## 技术栈
+
+- 后端：Python 3.12、FastAPI、SQLAlchemy、Alembic、uv
+- 前端：React、TypeScript、Vite、Ant Design、TanStack Query
+- 数据：PostgreSQL、Redis
+- 交付：Docker Compose、pytest、Vitest
+- 后续：LangGraph、Celery、Dify、Prometheus、Grafana
+
+## Docker 一键启动
+
+```powershell
+Copy-Item .env.example .env
+docker compose up --build
+```
+
+启动后访问：
+
+- Web：http://localhost:5173
+- API 文档：http://localhost:8000/docs
+- API 健康检查：http://localhost:8000/api/v1/health/live
+- API 就绪检查：http://localhost:8000/api/v1/health/ready
+
+停止服务：
+
+```powershell
+docker compose down
+```
+
+## 本地开发
+
+后端：
+
+```powershell
+Set-Location backend
+uv sync --python 3.12
+uv run alembic upgrade head
+uv run uvicorn app.main:app --reload
+```
+
+前端：
+
+```powershell
+Set-Location frontend
+npm ci
+npm run dev
+```
+
+质量检查：
+
+```powershell
+Set-Location backend
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest
+
+Set-Location ../frontend
+npm run typecheck
+npm test
+npm run build
+```
+
+## 目录
+
+```text
+backend/          FastAPI、SQLAlchemy、Alembic 和后端测试
+frontend/         React/Vite Web 应用和前端测试
+docs/             项目范围、架构、数据模型和路线图
+docker-compose.yml
+```
+
+## 文档
 
 - [项目范围与验收标准](docs/01-project-scope.md)
 - [技术选型与架构设计](docs/02-architecture.md)
 - [核心数据模型](docs/03-data-model.md)
 - [开发路线图](docs/04-roadmap.md)
-
-## 当前状态
-
-`v0.1-design`：完成项目范围、架构、目录结构和核心数据模型的初步设计。下一阶段将创建 FastAPI、React 和 PostgreSQL 的最小工程骨架。
+- [本地开发与验证](docs/05-development.md)
