@@ -16,7 +16,7 @@ Alert Sage 是一个求职展示型、准生产级 MVP。它不是只调用一�
 
 ```json
 {
-  "alert_id": "alert-20260718-001",
+  "external_alert_id": "alert-20260718-001",
   "alert_name": "HighCPUUsage",
   "service": "order-service",
   "instance": "order-service-01",

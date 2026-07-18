@@ -128,6 +128,36 @@ flowchart TD
 | `POST` | `/api/v1/alerts/{id}/decisions` | 批准、驳回或重新分析 |
 | `POST` | `/api/v1/alerts/{id}/retry` | 重试失败工作流 |
 
+### 6.1 告警接入契约
+
+V1.1 的告警创建请求：
+
+```json
+{
+  "source": "web",
+  "external_alert_id": "alert-20260718-001",
+  "alert_name": "HighCPUUsage",
+  "service": "order-service",
+  "instance": "order-service-01",
+  "severity": "critical",
+  "value": 92.5,
+  "threshold": 80,
+  "started_at": "2026-07-18T14:30:00+08:00",
+  "payload": {
+    "summary": "CPU usage remained high for five minutes"
+  }
+}
+```
+
+创建接口的幂等键为 `source + external_alert_id`：
+
+- 首次创建返回 `201`、`Location` 响应头及 `X-Idempotent-Replay: false`。
+- 相同幂等键和相同内容重复提交，返回原记录、`200` 及 `X-Idempotent-Replay: true`。
+- 相同幂等键携带不同告警内容时返回 `409 alert_idempotency_conflict`，不覆盖原记录。
+- API 层的预检查用于快速返回，数据库唯一约束负责并发请求下的最终一致性。
+
+列表接口使用 `page`、`page_size` 分页，`page_size` 范围为 1 到 100；支持 `status`、`severity` 和 `service` 精确过滤，默认按 `created_at`、`id` 倒序。V1 数据规模有限，优先选择易于调试的页码分页；需要稳定遍历大规模实时数据时再迁移为游标分页。
+
 人工决策请求：
 
 ```json

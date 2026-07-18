@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     debug: bool = False
     api_v1_prefix: str = "/api/v1"
     database_url: str = "postgresql+psycopg://alert_sage:alert_sage@localhost:5432/alert_sage"
+    test_database_url: str | None = None
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 
 

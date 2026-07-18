@@ -18,6 +18,8 @@ Copy-Item .env.example .env
 
 `.env` 不得提交。变量使用 `ALERT_SAGE_` 前缀映射后端配置；容器内数据库地址由 Compose 注入，宿主机默认连接 `localhost:5432`。
 
+后端集成测试读取 `ALERT_SAGE_TEST_DATABASE_URL`，缺省时复用开发数据库连接，但只在随机命名的临时 Schema 中建表。每项测试结束后会删除对应 Schema，不会清空开发业务表。
+
 ## 3. 完整容器环境
 
 构建并启动：
@@ -79,6 +81,31 @@ uv run pytest
 uv run alembic check
 ```
 
+告警 API 示例：
+
+```powershell
+$body = @{
+  source = "web"
+  external_alert_id = "alert-20260718-001"
+  alert_name = "HighCPUUsage"
+  service = "order-service"
+  instance = "order-service-01"
+  severity = "critical"
+  value = 92.5
+  threshold = 80
+  started_at = "2026-07-18T14:30:00+08:00"
+  payload = @{ summary = "CPU usage remained high for five minutes" }
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://localhost:8000/api/v1/alerts `
+  -ContentType "application/json" `
+  -Body $body
+
+Invoke-RestMethod http://localhost:8000/api/v1/alerts
+```
+
 ## 5. 前端开发
 
 ```powershell
@@ -95,17 +122,20 @@ npm test
 npm run build
 ```
 
-## 6. V0 验收
+## 6. 当前验收范围
 
 - `GET /api/v1/health/live` 不依赖数据库并返回 API 版本。
 - `GET /api/v1/health/ready` 仅在数据库可连接时返回成功。
 - Alembic 能创建 `alerts` 表，且模型元数据不存在未迁移差异。
+- 告警支持创建、详情、过滤和分页查询。
+- `source + external_alert_id` 在顺序和并发请求下均保持幂等，冲突内容返回 `409`。
+- 请求字段、时区和枚举通过 Pydantic 校验，非法请求返回 `422`。
 - Web 能展示 API 实时健康状态。
 - 后端测试、前端测试、类型检查和构建全部通过。
 - Docker Compose 四个服务均处于运行或健康状态。
 
 ## 7. 已知边界
 
-- V0 尚未实现告警 CRUD、Celery Worker、LangGraph、SSE 和 Dify。
+- V1.1 尚未实现告警页面、Celery Worker、LangGraph、SSE 和 Dify。
 - Redis 在 V0 中仅作为已启动的基础设施，业务代码尚未使用。
 - 当前迁移只落地 `alerts` 表，其余核心表将在对应功能实现时逐步加入。
