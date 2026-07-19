@@ -1,5 +1,7 @@
 # 核心数据模型
 
+> 实现状态：V1.3A 已落地 `workflow_runs`、`workflow_events`、`tool_executions`、`diagnosis_reports` 和 `human_decisions`；`cases` 仍属于后续闭环增量。
+
 ## 1. 建模目标
 
 核心数据模型需要同时支持：
@@ -22,7 +24,7 @@ erDiagram
     WORKFLOW_RUNS ||--o{ WORKFLOW_EVENTS : emits
     WORKFLOW_RUNS ||--o{ TOOL_EXECUTIONS : invokes
     WORKFLOW_RUNS ||--o{ DIAGNOSIS_REPORTS : produces
-    DIAGNOSIS_REPORTS ||--o{ HUMAN_DECISIONS : receives
+    DIAGNOSIS_REPORTS ||--o| HUMAN_DECISIONS : receives
     DIAGNOSIS_REPORTS ||--o| CASES : becomes
 
     ALERTS {
@@ -45,6 +47,7 @@ erDiagram
         uuid id PK
         uuid alert_id FK
         varchar thread_id UK
+        varchar idempotency_key UK
         varchar workflow_version
         varchar status
         varchar current_node
@@ -59,6 +62,8 @@ erDiagram
     WORKFLOW_EVENTS {
         uuid id PK
         uuid workflow_run_id FK
+        int sequence
+        varchar idempotency_key
         varchar event_type
         varchar node_name
         varchar status
@@ -69,6 +74,7 @@ erDiagram
     TOOL_EXECUTIONS {
         uuid id PK
         uuid workflow_run_id FK
+        varchar node_name
         varchar tool_name
         varchar idempotency_key UK
         varchar status
@@ -85,6 +91,7 @@ erDiagram
         uuid id PK
         uuid workflow_run_id FK
         int version
+        varchar schema_version
         text summary
         jsonb root_causes
         jsonb evidence
@@ -98,6 +105,7 @@ erDiagram
     HUMAN_DECISIONS {
         uuid id PK
         uuid diagnosis_report_id FK
+        varchar idempotency_key UK
         varchar action
         text comment
         varchar actor
@@ -149,15 +157,16 @@ erDiagram
 关键字段：
 
 - `thread_id`：传给 LangGraph Checkpointer 的稳定游标，全局唯一。
+- `idempotency_key`：工作流启动命令的全局幂等键，防止 API 或任务重复投递创建第二次运行。
 - `workflow_version`：记录图结构版本，避免升级后无法解释旧状态。
 - `current_node`：供页面快速展示，不替代 checkpoint。
 - `attempt`：运行级重试次数。
 
 约束与索引：
 
-- `UNIQUE(thread_id)`。
+- `UNIQUE(thread_id)` 和 `UNIQUE(idempotency_key)`。
 - 索引：`alert_id`、`status`、`updated_at`。
-- 同一告警同一时刻最多存在一个活动运行，该规则由事务或部分唯一索引保证。
+- 同一告警同一时刻最多存在一个活动运行，由覆盖 `queued`、`running`、`waiting_for_approval`、`reanalyzing` 的 PostgreSQL 部分唯一索引保证。
 
 ### 3.3 `workflow_events`
 
@@ -167,18 +176,21 @@ erDiagram
 
 ```text
 workflow_started
+workflow_queued
 node_started
 node_completed
 node_failed
 tool_started
 tool_completed
+tool_failed
 human_input_required
 human_decision_received
 workflow_completed
+workflow_rejected
 workflow_failed
 ```
 
-事件不可原地修改。SSE 客户端可以将事件 ID 作为断点，从数据库补发断线期间的事件。
+事件不可原地修改。每个运行内的 `sequence` 从 1 递增，并与 `workflow_run_id` 组成唯一约束；SSE 客户端使用序号作为断点补发断线期间的事件。`(workflow_run_id, idempotency_key)` 防止恢复或重试时追加重复事件。
 
 ### 3.4 `tool_executions`
 
@@ -191,6 +203,8 @@ workflow_run_id + node_name + tool_name + normalized_input_hash
 ```
 
 唯一约束确保 Celery 重试或 LangGraph 恢复时能够复用已完成结果，而不是重复调用有副作用的外部系统。
+
+每次执行还保存 `node_name`、状态、尝试次数、输入输出、错误码、错误消息和耗时；输入输出为 JSONB，但不得写入未脱敏的密钥或凭证。
 
 ### 3.5 `diagnosis_reports`
 
@@ -213,6 +227,7 @@ workflow_run_id + node_name + tool_name + normalized_input_hash
 
 - `UNIQUE(workflow_run_id, version)`。
 - `confidence` 范围为 0 到 1。
+- `schema_version` 固定当前结构版本，便于后续兼容旧报告。
 - LLM 输出先通过 Pydantic Schema 校验后才能入库。
 
 ### 3.6 `human_decisions`
@@ -228,6 +243,8 @@ reanalyze
 ```
 
 决策写入与运行状态变更应处于同一数据库事务中。接口需要防止对已结束运行重复审批。
+
+每份报告最多接受一个决策，`idempotency_key` 全局唯一；`reanalyze` 必须提供非空反馈。数据库约束负责最终一致性，Pydantic Schema 负责在进入事务前返回可理解的校验错误。
 
 ### 3.7 `cases`
 
@@ -246,21 +263,23 @@ failed
 
 ## 4. LangGraph 状态
 
-LangGraph State 是执行期间的数据载体，不直接等同于数据库 ORM 模型。建议初始结构：
+LangGraph State 是执行期间的数据载体，不直接等同于数据库 ORM 模型。V1.3A 使用 Pydantic 严格模型作为运行时边界，未来节点接收其 JSON 模式输出：
 
 ```python
-class AlertWorkflowState(TypedDict):
-    alert_id: str
-    workflow_run_id: str
-    alert: dict
-    classification: dict | None
-    contexts: dict[str, dict]
-    tool_errors: list[dict]
-    diagnosis: dict | None
-    recommendations: list[dict]
-    report_id: str | None
+class AlertWorkflowState(BaseModel):
+    schema_version: Literal["1.0"]
+    alert_id: UUID
+    workflow_run_id: UUID
+    thread_id: str
+    alert: dict[str, JsonValue]
+    classification: dict[str, JsonValue] | None
+    contexts: dict[str, ContextSnapshot]
+    tool_errors: list[WorkflowToolError]
+    diagnosis: dict[str, JsonValue] | None
+    recommendations: list[dict[str, JsonValue]]
+    report_id: UUID | None
     report_version: int
-    human_decision: dict | None
+    human_decision: WorkflowHumanDecision | None
     reanalysis_count: int
     warnings: list[str]
 ```
@@ -271,6 +290,19 @@ class AlertWorkflowState(TypedDict):
 - 大型日志全文保存在业务表或对象存储，State 仅保留摘要和引用。
 - 并行节点写同一字段时使用明确 reducer，避免结果互相覆盖。
 - `workflow_run_id` 与 `thread_id` 分工明确：前者是业务运行 ID，后者是 checkpoint 游标。
+
+### 4.1 状态转换护栏
+
+状态修改必须经过 `app.workflows.alert.transitions`，相同状态重复投递视为幂等 no-op。主要路径为：
+
+```text
+received -> running -> waiting_for_approval -> completed
+                                  |-> rejected
+                                  |-> reanalyzing -> waiting_for_approval
+running / reanalyzing -> failed -> running
+```
+
+工作流运行以 `queued` 开始；失败运行可以重新进入 `queued` 并增加 `attempt`。`completed` 和 `rejected` 是终态，不允许恢复为活动状态。
 
 ## 5. 状态来源优先级
 

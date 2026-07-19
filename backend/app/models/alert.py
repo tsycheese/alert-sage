@@ -1,13 +1,16 @@
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import CheckConstraint, DateTime, Index, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.models.enums import AlertSeverity, AlertStatus
+
+if TYPE_CHECKING:
+    from app.models.workflow import WorkflowRun
 
 
 class Alert(Base):
@@ -42,3 +45,4 @@ class Alert(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+    workflow_runs: Mapped[list["WorkflowRun"]] = relationship(back_populates="alert")

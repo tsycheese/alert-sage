@@ -147,9 +147,50 @@ npm run build
 - 列表筛选和分页状态写入 URL，可刷新和分享；创建成功后进入对应详情页。
 - 后端测试、前端测试、类型检查和构建全部通过。
 - Docker Compose 四个服务均处于运行或健康状态。
+- `workflow_runs`、`workflow_events`、`tool_executions`、`diagnosis_reports`、`human_decisions` 已通过迁移创建。
+- 数据库能阻止同一告警存在多个活动运行，以及重复事件序号、工具执行和人工决策。
+- 工作流 State、诊断报告和人工决策输入通过严格 Pydantic Schema 校验。
 
 ## 7. 已知边界
 
-- V1.2 尚未实现 Celery Worker、LangGraph、SSE、人工确认和 Dify；详情页只展示对应的诚实空状态。
+- V1.3A 尚未实现 LangGraph 节点、Celery Worker、SSE、人工确认 API 和 Dify；详情页仍展示对应的诚实空状态。
 - Redis 在 V0 中仅作为已启动的基础设施，业务代码尚未使用。
-- 当前迁移只落地 `alerts` 表，其余核心表将在对应功能实现时逐步加入。
+- `cases`、LangGraph checkpoint 表和 Outbox 尚未落地，将在案例闭环、Checkpointer 和异步投递分别实现时加入。
+
+## 8. V1.3A 专项验证
+
+启动 PostgreSQL 并升级迁移：
+
+```powershell
+docker compose up -d postgres
+
+Set-Location backend
+uv run alembic upgrade head
+uv run alembic current
+uv run alembic check
+```
+
+运行工作流契约和数据库约束测试：
+
+```powershell
+$env:ALERT_SAGE_TEST_DATABASE_URL = `
+  "postgresql+psycopg://alert_sage:alert_sage@localhost:5432/alert_sage"
+
+uv run pytest -q tests/test_workflow_foundation.py
+uv run pytest -q
+```
+
+专项测试应包含 14 条用例，覆盖严格 State、诊断报告引用、人工反馈、状态转换、活动运行唯一性，以及启动、事件、工具、报告和人工决策的幂等、版本与唯一约束。测试使用临时 Schema，结束后自动删除，不会修改开发业务表。
+
+可选地通过 PostgreSQL 客户端查看迁移结果：
+
+```sql
+SELECT version_num FROM alembic_version;
+
+SELECT table_name
+FROM information_schema.tables
+WHERE table_schema = 'public'
+ORDER BY table_name;
+```
+
+预期迁移版本为 `0002`，并能看到 `alerts`、`workflow_runs`、`workflow_events`、`tool_executions`、`diagnosis_reports` 和 `human_decisions`。
