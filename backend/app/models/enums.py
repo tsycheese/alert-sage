@@ -41,6 +41,17 @@ class WorkflowEventType(StrEnum):
     WORKFLOW_COMPLETED = "workflow_completed"
     WORKFLOW_REJECTED = "workflow_rejected"
     WORKFLOW_FAILED = "workflow_failed"
+    CASE_CREATED = "case_created"
+    CASE_SYNC_STARTED = "case_sync_started"
+    CASE_SYNC_SUCCEEDED = "case_sync_succeeded"
+    CASE_SYNC_FAILED = "case_sync_failed"
+
+
+class KnowledgeSyncStatus(StrEnum):
+    PENDING = "pending"
+    SYNCING = "syncing"
+    SYNCED = "synced"
+    FAILED = "failed"
 
 
 class ToolExecutionStatus(StrEnum):

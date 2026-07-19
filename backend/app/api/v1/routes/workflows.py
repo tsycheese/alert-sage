@@ -249,12 +249,12 @@ async def retry_workflow(
 async def stream_workflow_events(
     alert_id: UUID,
     request: Request,
-    session: DatabaseSession,
     session_factory: SessionFactory,
     last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
 ) -> StreamingResponse:
     try:
-        run = await WorkflowQueryService(session).latest_run(alert_id)
+        async with session_factory() as initial_session:
+            run = await WorkflowQueryService(initial_session).latest_run(alert_id)
     except AlertWorkflowNotFoundError as exc:
         raise _workflow_error(exc, alert_id) from exc
     cursor = int(last_event_id) if last_event_id and last_event_id.isdigit() else 0
@@ -274,9 +274,11 @@ async def stream_workflow_events(
         try:
             while not await request.is_disconnected():
                 async with session_factory() as event_session:
-                    current_run, events = await WorkflowQueryService(event_session).events(
+                    query_service = WorkflowQueryService(event_session)
+                    current_run, events = await query_service.events(
                         alert_id, after=cursor, limit=200
                     )
+                    case_sync_active = await query_service.case_sync_active(current_run.id)
                 for event in events:
                     payload = WorkflowEventResponse.model_validate(event)
                     cursor = payload.sequence
@@ -285,7 +287,7 @@ async def stream_workflow_events(
                         f"event: {payload.event_type.value}\n"
                         f"data: {payload.model_dump_json()}\n\n"
                     )
-                if current_run.status in TERMINAL_STATUSES and not events:
+                if current_run.status in TERMINAL_STATUSES and not events and not case_sync_active:
                     break
                 if pubsub is not None:
                     try:

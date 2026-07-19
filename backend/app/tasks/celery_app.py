@@ -7,7 +7,7 @@ settings = get_settings()
 celery_app = Celery(
     "alert_sage",
     broker=settings.celery_broker_url,
-    include=["app.tasks.workflows"],
+    include=["app.tasks.workflows", "app.tasks.cases"],
 )
 celery_app.conf.update(
     task_serializer="json",

@@ -167,6 +167,90 @@ export type ApiErrorResponse = {
 };
 
 /**
+ * CaseResponse
+ */
+export type CaseResponse = {
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Diagnosis Report Id
+     */
+    diagnosis_report_id: string;
+    /**
+     * Evidence
+     */
+    evidence: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * External Document Id
+     */
+    external_document_id: string | null;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Knowledge Sync Attempt
+     */
+    knowledge_sync_attempt: number;
+    knowledge_sync_status: KnowledgeSyncStatus;
+    /**
+     * Resolution
+     */
+    resolution: string;
+    /**
+     * Root Cause
+     */
+    root_cause: string;
+    /**
+     * Symptom
+     */
+    symptom: string;
+    /**
+     * Sync Error Code
+     */
+    sync_error_code: string | null;
+    /**
+     * Sync Error Message
+     */
+    sync_error_message: string | null;
+    /**
+     * Synced At
+     */
+    synced_at: string | null;
+    /**
+     * Tags
+     */
+    tags: Array<string>;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Updated At
+     */
+    updated_at: string;
+};
+
+/**
+ * CaseSyncAcceptedResponse
+ */
+export type CaseSyncAcceptedResponse = {
+    /**
+     * Case Id
+     */
+    case_id: string;
+    /**
+     * Dispatched
+     */
+    dispatched: boolean;
+    status: KnowledgeSyncStatus;
+};
+
+/**
  * DiagnosisReportResponse
  */
 export type DiagnosisReportResponse = {
@@ -300,6 +384,11 @@ export type HumanDecisionResponse = {
 };
 
 /**
+ * KnowledgeSyncStatus
+ */
+export type KnowledgeSyncStatus = 'pending' | 'syncing' | 'synced' | 'failed';
+
+/**
  * WorkflowAcceptedResponse
  */
 export type WorkflowAcceptedResponse = {
@@ -377,7 +466,7 @@ export type WorkflowEventResponse = {
 /**
  * WorkflowEventType
  */
-export type WorkflowEventType = 'workflow_queued' | 'workflow_started' | 'node_started' | 'node_completed' | 'node_failed' | 'tool_started' | 'tool_completed' | 'tool_failed' | 'human_input_required' | 'human_decision_received' | 'workflow_completed' | 'workflow_rejected' | 'workflow_failed';
+export type WorkflowEventType = 'workflow_queued' | 'workflow_started' | 'node_started' | 'node_completed' | 'node_failed' | 'tool_started' | 'tool_completed' | 'tool_failed' | 'human_input_required' | 'human_decision_received' | 'workflow_completed' | 'workflow_rejected' | 'workflow_failed' | 'case_created' | 'case_sync_started' | 'case_sync_succeeded' | 'case_sync_failed';
 
 /**
  * WorkflowRunResponse
@@ -581,6 +670,90 @@ export type GetAlertApiV1AlertsAlertIdGetResponses = {
 };
 
 export type GetAlertApiV1AlertsAlertIdGetResponse = GetAlertApiV1AlertsAlertIdGetResponses[keyof GetAlertApiV1AlertsAlertIdGetResponses];
+
+export type GetCaseApiV1AlertsAlertIdCaseGetData = {
+    body?: never;
+    path: {
+        /**
+         * Alert Id
+         */
+        alert_id: string;
+    };
+    query?: never;
+    url: '/api/v1/alerts/{alert_id}/case';
+};
+
+export type GetCaseApiV1AlertsAlertIdCaseGetErrors = {
+    /**
+     * Not Found
+     */
+    404: ApiErrorResponse;
+    /**
+     * Conflict
+     */
+    409: ApiErrorResponse;
+    /**
+     * Unprocessable Entity
+     */
+    422: ApiErrorResponse;
+    /**
+     * Service Unavailable
+     */
+    503: ApiErrorResponse;
+};
+
+export type GetCaseApiV1AlertsAlertIdCaseGetError = GetCaseApiV1AlertsAlertIdCaseGetErrors[keyof GetCaseApiV1AlertsAlertIdCaseGetErrors];
+
+export type GetCaseApiV1AlertsAlertIdCaseGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: CaseResponse;
+};
+
+export type GetCaseApiV1AlertsAlertIdCaseGetResponse = GetCaseApiV1AlertsAlertIdCaseGetResponses[keyof GetCaseApiV1AlertsAlertIdCaseGetResponses];
+
+export type RetryCaseSyncApiV1AlertsAlertIdCaseRetryPostData = {
+    body?: never;
+    path: {
+        /**
+         * Alert Id
+         */
+        alert_id: string;
+    };
+    query?: never;
+    url: '/api/v1/alerts/{alert_id}/case/retry';
+};
+
+export type RetryCaseSyncApiV1AlertsAlertIdCaseRetryPostErrors = {
+    /**
+     * Not Found
+     */
+    404: ApiErrorResponse;
+    /**
+     * Conflict
+     */
+    409: ApiErrorResponse;
+    /**
+     * Unprocessable Entity
+     */
+    422: ApiErrorResponse;
+    /**
+     * Service Unavailable
+     */
+    503: ApiErrorResponse;
+};
+
+export type RetryCaseSyncApiV1AlertsAlertIdCaseRetryPostError = RetryCaseSyncApiV1AlertsAlertIdCaseRetryPostErrors[keyof RetryCaseSyncApiV1AlertsAlertIdCaseRetryPostErrors];
+
+export type RetryCaseSyncApiV1AlertsAlertIdCaseRetryPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: CaseSyncAcceptedResponse;
+};
+
+export type RetryCaseSyncApiV1AlertsAlertIdCaseRetryPostResponse = RetryCaseSyncApiV1AlertsAlertIdCaseRetryPostResponses[keyof RetryCaseSyncApiV1AlertsAlertIdCaseRetryPostResponses];
 
 export type SubmitWorkflowDecisionApiV1AlertsAlertIdDecisionsPostData = {
     body: HumanDecisionRequest;

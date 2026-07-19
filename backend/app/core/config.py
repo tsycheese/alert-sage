@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     celery_broker_url: str = "redis://localhost:6379/0"
     workflow_lock_ttl_seconds: int = 300
     workflow_event_poll_seconds: float = 2.0
+    case_sync_timeout_seconds: float = 5.0
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 
 

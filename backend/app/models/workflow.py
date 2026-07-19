@@ -98,7 +98,9 @@ class WorkflowEvent(Base):
             "event_type IN ('workflow_queued', 'workflow_started', 'node_started', "
             "'node_completed', 'node_failed', 'tool_started', 'tool_completed', "
             "'tool_failed', 'human_input_required', 'human_decision_received', "
-            "'workflow_completed', 'workflow_rejected', 'workflow_failed')",
+            "'workflow_completed', 'workflow_rejected', 'workflow_failed', "
+            "'case_created', 'case_sync_started', 'case_sync_succeeded', "
+            "'case_sync_failed')",
             name="event_type_values",
         ),
         Index("ix_workflow_events_run_occurred", "workflow_run_id", "occurred_at"),

@@ -5,6 +5,8 @@ import type {
   AlertSeverity,
   AlertStatus,
   ApiErrorResponse,
+  CaseResponse,
+  CaseSyncAcceptedResponse,
   HealthResponse,
   HumanDecisionRequest,
   WorkflowAcceptedResponse,
@@ -177,6 +179,22 @@ export async function submitWorkflowDecision(
 export async function retryWorkflow(alertId: string): Promise<WorkflowAcceptedResponse> {
   const { data } = await requestJson<WorkflowAcceptedResponse>(
     `/api/v1/alerts/${encodeURIComponent(alertId)}/retry`,
+    { method: "POST" },
+  );
+  return data;
+}
+
+export async function getCase(alertId: string, signal?: AbortSignal): Promise<CaseResponse> {
+  const { data } = await requestJson<CaseResponse>(
+    `/api/v1/alerts/${encodeURIComponent(alertId)}/case`,
+    { signal },
+  );
+  return data;
+}
+
+export async function retryCaseSync(alertId: string): Promise<CaseSyncAcceptedResponse> {
+  const { data } = await requestJson<CaseSyncAcceptedResponse>(
+    `/api/v1/alerts/${encodeURIComponent(alertId)}/case/retry`,
     { method: "POST" },
   );
   return data;

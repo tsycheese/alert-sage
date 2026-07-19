@@ -62,10 +62,12 @@ class KnowledgeRetriever:
         ...
 ```
 
-第一版实现：
+适配器实现：
 
-- `DifyRetriever`：调用 Dify Knowledge Base API。
 - `MockRetriever`：测试和离线开发使用。
+- `DifyRetriever`：下一阶段调用 Dify Knowledge Base API。
+
+案例写入知识库使用独立的 `CasePublisher` 协议。V1.4 已实现确定性的 `MockCasePublisher`，后续 `DifyCasePublisher` 只替换适配器，不改变案例事实表、工作流状态或重试 API。
 
 后续实现 `PgVectorRetriever`，用同一评测集对比两种检索方案。LangGraph 节点只依赖 `KnowledgeRetriever`，不感知 Dify 的响应格式。
 
@@ -87,6 +89,8 @@ flowchart TB
     RETRIEVER --> DIFY["Dify Knowledge Base"]
     GRAPH --> LLM["OpenAI-compatible LLM API"]
     GRAPH --> PG
+    WORKER --> CASE_PUBLISHER["CasePublisher"]
+    CASE_PUBLISHER --> DIFY
 
     GRAPH -->|节点事件| REDIS
     REDIS --> SSE
@@ -112,11 +116,11 @@ flowchart TD
 
 `human_review` 使用持久化 checkpoint。恢复执行时节点可能重新进入，因此暂停前的写操作必须幂等，外部副作用应放在人工批准之后。
 
-V1.3B 已按上图实现七个节点。`finalize` 只根据已持久化的人工决策写入完成或驳回终态；批准后的 `cases` 生成仍属于后续案例沉淀增量，不在当前节点中伪造未落地结果。
+V1.4 在 `finalize` 持久化批准终态时，同一数据库事务内生成一条结构化 `cases` 记录。事务提交后由独立 Celery 任务调用 `CasePublisher`；同步失败不会回滚已经确认的业务事实，也不会把外部供应商状态混入 LangGraph checkpoint。
 
 ## 6. Web 与 API
 
-V1.3C 已实现以下告警与工作流接口：
+V1.4 已实现以下告警、工作流与案例接口：
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
@@ -129,6 +133,8 @@ V1.3C 已实现以下告警与工作流接口：
 | `GET` | `/api/v1/alerts/{id}/stream` | 订阅 SSE 状态事件 |
 | `POST` | `/api/v1/alerts/{id}/decisions` | 批准、驳回或重新分析 |
 | `POST` | `/api/v1/alerts/{id}/retry` | 重试失败工作流 |
+| `GET` | `/api/v1/alerts/{id}/case` | 查询批准后生成的案例与知识同步状态 |
+| `POST` | `/api/v1/alerts/{id}/case/retry` | 重试失败的案例知识同步 |
 
 ### 6.1 告警接入契约
 
@@ -175,13 +181,13 @@ V1.3C 尚未接入认证，`actor` 是求职演示边界内的审计字段，不
 
 SSE 用于服务器向浏览器单向推送状态，审批仍使用普通 HTTP 请求。服务端先按 `Last-Event-ID` 从 PostgreSQL 补发，再用 Redis Pub/Sub 唤醒查询，并保留周期性数据库轮询；Redis 消息丢失不会丢审计事实。需要双向高频交互前不引入 WebSocket。
 
-### 6.2 V1.3C Web 路由与服务端状态
+### 6.2 V1.4 Web 路由与服务端状态
 
 | 路由 | 页面职责 |
 | --- | --- |
 | `/alerts` | 告警列表、过滤和分页；查询条件保存在 URL 中 |
 | `/alerts/new` | 创建模拟告警，处理成功、字段校验和幂等冲突 |
-| `/alerts/:alertId` | 展示业务事实、报告、建议、事件时间线、失败重试和人工确认 |
+| `/alerts/:alertId` | 展示业务事实、报告、建议、事件时间线、人工确认、结构化案例和同步重试 |
 | `*` | 应用级 404 |
 
 React Router 使用声明式路由，页面模块按路由懒加载。TanStack Query 只管理 API 服务端状态；筛选和分页使用 URL Search Params，表单临时值由 Ant Design Form 管理，不复制到全局状态。

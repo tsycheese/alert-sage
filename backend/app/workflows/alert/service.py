@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.alert import Alert
+from app.models.case import Case
 from app.models.diagnosis import DiagnosisReport, HumanDecision
 from app.models.enums import (
     AlertStatus,
@@ -27,6 +28,7 @@ from app.schemas.workflow import (
     HumanDecisionCommand,
     WorkflowResumePayload,
 )
+from app.services.workflow_events import append_workflow_event
 from app.workflows.alert.state import AlertWorkflowState
 from app.workflows.alert.transitions import (
     ensure_alert_status_transition,
@@ -61,6 +63,7 @@ class WorkflowExecutionResult:
     thread_id: str
     status: WorkflowRunStatus
     current_node: str | None
+    case_id: UUID | None
     state: AlertWorkflowState
 
 
@@ -107,6 +110,7 @@ class AlertWorkflowService:
         )
 
     async def execute_start(self, workflow_run_id: UUID) -> WorkflowExecutionResult:
+        already_paused_or_terminal = False
         async with self.session_factory() as session:
             run = await session.get(WorkflowRun, workflow_run_id)
             if run is None:
@@ -116,10 +120,13 @@ class AlertWorkflowService:
                 WorkflowRunStatus.COMPLETED,
                 WorkflowRunStatus.REJECTED,
             }:
-                return await self.get_result(workflow_run_id)
+                already_paused_or_terminal = True
             alert = await session.get(Alert, run.alert_id)
             if alert is None:
                 raise WorkflowStateConflictError("workflow alert no longer exists")
+
+        if already_paused_or_terminal:
+            return await self.get_result(workflow_run_id)
 
         if run.status == WorkflowRunStatus.RUNNING:
             snapshot = await self.graph.aget_state(self._graph_config(run.thread_id))
@@ -188,6 +195,7 @@ class AlertWorkflowService:
         workflow_run_id: UUID,
         decision_id: UUID,
     ) -> WorkflowExecutionResult:
+        already_terminal = False
         async with self.session_factory() as session:
             decision = await session.get(HumanDecision, decision_id)
             if decision is None:
@@ -199,7 +207,7 @@ class AlertWorkflowService:
             if run is None:
                 raise WorkflowRunNotFoundError
             if run.status in {WorkflowRunStatus.COMPLETED, WorkflowRunStatus.REJECTED}:
-                return await self.get_result(workflow_run_id)
+                already_terminal = True
             resume = WorkflowResumePayload(
                 idempotency_key=decision.idempotency_key,
                 action=decision.action,
@@ -207,6 +215,8 @@ class AlertWorkflowService:
                 actor=decision.actor,
             )
             thread_id = run.thread_id
+        if already_terminal:
+            return await self.get_result(workflow_run_id)
         snapshot = await self.graph.aget_state(self._graph_config(thread_id))
         graph_input: object = (
             Command(resume=resume.model_dump(mode="json"))
@@ -264,6 +274,13 @@ class AlertWorkflowService:
             thread_id = run.thread_id
             status = run.status
             current_node = run.current_node
+            case_id = await session.scalar(
+                select(Case.id)
+                .join(DiagnosisReport, Case.diagnosis_report_id == DiagnosisReport.id)
+                .where(DiagnosisReport.workflow_run_id == workflow_run_id)
+                .order_by(Case.created_at.desc())
+                .limit(1)
+            )
         snapshot = await self.graph.aget_state(self._graph_config(thread_id))
         if not snapshot.values:
             raise WorkflowStateConflictError("workflow checkpoint does not exist")
@@ -273,6 +290,7 @@ class AlertWorkflowService:
             thread_id=thread_id,
             status=status,
             current_node=current_node,
+            case_id=case_id,
             state=state,
         )
 
@@ -632,6 +650,7 @@ class AlertWorkflowService:
             run_target = WorkflowRunStatus.COMPLETED
             alert_target = AlertStatus.COMPLETED
             event_type = WorkflowEventType.WORKFLOW_COMPLETED
+            await self._persist_case(session, run, alert, state)
         elif state.final_status == "rejected":
             run_target = WorkflowRunStatus.REJECTED
             alert_target = AlertStatus.REJECTED
@@ -652,6 +671,61 @@ class AlertWorkflowService:
             status=run_target,
             payload={"report_version": state.report_version},
         )
+
+    async def _persist_case(
+        self,
+        session: AsyncSession,
+        run: WorkflowRun,
+        alert: Alert,
+        state: AlertWorkflowState,
+    ) -> Case:
+        if state.report_id is None:
+            raise WorkflowStateConflictError("approved workflow has no diagnosis report")
+        existing = await session.scalar(
+            select(Case).where(Case.diagnosis_report_id == state.report_id)
+        )
+        if existing is not None:
+            return existing
+        report = await session.get(DiagnosisReport, state.report_id)
+        if report is None:
+            raise WorkflowStateConflictError("approved diagnosis report does not exist")
+        root_cause = "\n".join(
+            f"{item.get('title', 'Unknown cause')}: {item.get('explanation', '')}".strip()
+            for item in report.root_causes
+        )
+        resolution_parts: list[str] = []
+        for item in report.recommendations:
+            actions = item.get("actions") or []
+            action_text = "; ".join(str(action) for action in actions)
+            resolution_parts.append(f"{item.get('title', 'Recommendation')}: {action_text}".strip())
+        payload_summary = alert.payload.get("summary")
+        symptom = (
+            str(payload_summary)
+            if payload_summary
+            else f"{alert.alert_name} on {alert.instance or alert.service}"
+        )
+        case = Case(
+            id=uuid.uuid5(report.id, "case"),
+            diagnosis_report_id=report.id,
+            title=f"{alert.service}: {alert.alert_name} 处置案例"[:255],
+            symptom=symptom,
+            root_cause=root_cause or report.summary,
+            resolution="\n".join(resolution_parts) or report.summary,
+            evidence=report.evidence,
+            tags=list(dict.fromkeys([alert.service, alert.alert_name, str(alert.severity)])),
+        )
+        session.add(case)
+        await session.flush()
+        await self._append_event(
+            session,
+            run,
+            idempotency_key=f"case:created:{case.id}",
+            event_type=WorkflowEventType.CASE_CREATED,
+            node_name="finalize",
+            status=case.knowledge_sync_status,
+            payload={"case_id": str(case.id), "report_version": report.version},
+        )
+        return case
 
     async def _mark_failed(self, workflow_run_id: UUID, error: Exception) -> None:
         async with self.session_factory() as session:
@@ -687,37 +761,15 @@ class AlertWorkflowService:
         node_name: str | None = None,
         status: object | None = None,
     ) -> WorkflowEvent:
-        existing = await session.scalar(
-            select(WorkflowEvent).where(
-                WorkflowEvent.workflow_run_id == run.id,
-                WorkflowEvent.idempotency_key == idempotency_key,
-            )
-        )
-        if existing is not None:
-            return existing
-        sequence = (
-            int(
-                await session.scalar(
-                    select(func.coalesce(func.max(WorkflowEvent.sequence), 0)).where(
-                        WorkflowEvent.workflow_run_id == run.id
-                    )
-                )
-                or 0
-            )
-            + 1
-        )
-        event = WorkflowEvent(
-            workflow_run_id=run.id,
-            sequence=sequence,
+        return await append_workflow_event(
+            session,
+            run,
             idempotency_key=idempotency_key,
             event_type=event_type,
-            node_name=node_name,
-            status=str(status) if status is not None else None,
             payload=payload,
+            node_name=node_name,
+            status=status,
         )
-        session.add(event)
-        await session.flush()
-        return event
 
     @staticmethod
     async def _tool_exists(session: AsyncSession, run_id: UUID, key: str) -> bool:

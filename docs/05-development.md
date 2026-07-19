@@ -149,7 +149,7 @@ npm run build
 - 列表筛选和分页状态写入 URL，可刷新和分享；创建成功后进入对应详情页。
 - 后端测试、前端测试、类型检查和构建全部通过。
 - Docker Compose 五个服务均处于运行或健康状态。
-- `workflow_runs`、`workflow_events`、`tool_executions`、`diagnosis_reports`、`human_decisions` 已通过迁移创建。
+- `workflow_runs`、`workflow_events`、`tool_executions`、`diagnosis_reports`、`human_decisions`、`cases` 已通过迁移创建。
 - 数据库能阻止同一告警存在多个活动运行，以及重复事件序号、工具执行和人工决策。
 - 工作流 State、诊断报告和人工决策输入通过严格 Pydantic Schema 校验。
 - 七节点 LangGraph 可运行至 `human_review` 并持久化中断；关闭并重新创建运行时后可使用相同 `thread_id` 恢复。
@@ -160,11 +160,13 @@ npm run build
 - Web 可启动诊断、查看报告与事件，并批准、驳回或携带反馈重新分析。
 - SSE 能通过 `Last-Event-ID` 从 PostgreSQL 补发事件，Redis 仅负责通知唤醒。
 - Broker 首次投递失败会持久化失败状态并支持重试。
+- 人工批准会原子生成结构化案例；独立任务同步知识库，状态、尝试次数和外部文档 ID 可查询。
+- 案例同步失败不回滚工作流终态，Web 可重新投递，重复同步已成功案例不会重复发布。
 
 ## 7. 已知边界
 
 - Dify、真实模型和真实运维工具尚未接入，当前使用确定性模拟适配器。
-- `cases` 尚未落地，批准当前只结束工作流，不伪造案例沉淀结果。
+- Dify 发布与检索尚未接入；案例同步当前使用确定性 `MockCasePublisher`，真实供应商通过同一适配器协议替换。
 - V1.3C 使用数据库事务提交后投递 Celery；首次投递失败可见且可重试，但尚未使用事务性 Outbox 消除进程在提交与投递之间退出的窗口，Outbox 计划在 V2 落地。
 - 尚未接入认证和 RBAC；`actor` 当前为演示审计字段。
 
@@ -204,7 +206,7 @@ WHERE table_schema = 'public'
 ORDER BY table_name;
 ```
 
-预期迁移版本为 `0002`，并能看到 `alerts`、`workflow_runs`、`workflow_events`、`tool_executions`、`diagnosis_reports` 和 `human_decisions`。
+当前预期迁移版本为 `0003`，并能看到 `alerts`、`workflow_runs`、`workflow_events`、`tool_executions`、`diagnosis_reports`、`human_decisions` 和 `cases`。
 
 ## 9. V1.3B 专项验证
 
@@ -268,4 +270,28 @@ POST /api/v1/alerts/{id}/decisions
 POST /api/v1/alerts/{id}/retry
 ```
 
-专项自动化验证覆盖异步准备、人工决策、投递失败和重试；完整质量门禁为后端 33 项测试、前端 6 项测试、Ruff、TypeScript 类型检查及生产构建。容器级验收还应确认 Worker 注册三个 `alert_sage.workflow.*` 任务，并通过 Nginx SSE 路由按事件序号补发。
+专项自动化验证覆盖异步准备、人工决策、投递失败和重试；V1.4 完整质量门禁为后端 39 项测试、前端 8 项测试、Ruff、TypeScript 类型检查及生产构建。容器级验收还应确认 Worker 注册三个 `alert_sage.workflow.*` 任务和一个 `alert_sage.case.sync` 任务，并通过 Nginx SSE 路由按事件序号补发。
+
+## 11. V1.4 专项验证
+
+批准报告后，Worker 会生成案例并异步调用知识库发布适配器。页面应先后展示 `pending`/`syncing` 与 `synced`；成功时存在以 `mock-doc-` 开头的外部文档 ID。对应接口为：
+
+```text
+GET  /api/v1/alerts/{id}/case
+POST /api/v1/alerts/{id}/case/retry
+```
+
+数据库事件时间线应追加 `case_created`、`case_sync_started`、`case_sync_succeeded`；失败时追加 `case_sync_failed`，案例保留错误信息并允许重试。拒绝报告不得生成案例。自动化测试还覆盖同步幂等和失败后重试。
+
+2026-07-19 已完成 Docker Compose 容器验收：Web 经 Nginx 返回 `200`，API 健康状态为 `ok`；真实创建的告警运行至 `completed`，报告版本为 1，案例以 1 次尝试同步为 `synced` 并生成 `mock-doc-*` 外部文档 ID。该链路共写入 19 条事件，SSE 使用 `Last-Event-ID: 15` 能补发 `case_created`、`workflow_completed`、`case_sync_started` 和 `case_sync_succeeded` 后正常关闭。再次请求同步已成功案例返回 `dispatched=false`，尝试次数和事件数量均未增加。
+
+运行专项测试：
+
+```powershell
+Set-Location backend
+uv run pytest -q tests/test_cases.py
+
+Set-Location ../frontend
+npm test -- --run
+npm run build
+```

@@ -1,6 +1,6 @@
 # 核心数据模型
 
-> 实现状态：V1.3C 已将这些业务表接入工作流 API、Celery Worker、SSE 和 Web 人工确认；`cases` 仍属于后续闭环增量。
+> 实现状态：V1.4 已将告警、工作流、人工确认、结构化案例和知识同步状态接入 API、Celery Worker、SSE 与 Web。
 
 ## 1. 建模目标
 
@@ -122,7 +122,11 @@ erDiagram
         jsonb evidence
         jsonb tags
         varchar knowledge_sync_status
+        int knowledge_sync_attempt
         varchar external_document_id
+        varchar sync_error_code
+        text sync_error_message
+        timestamptz synced_at
         timestamptz created_at
         timestamptz updated_at
     }
@@ -188,6 +192,10 @@ human_decision_received
 workflow_completed
 workflow_rejected
 workflow_failed
+case_created
+case_sync_started
+case_sync_succeeded
+case_sync_failed
 ```
 
 事件不可原地修改。每个运行内的 `sequence` 从 1 递增，并与 `workflow_run_id` 组成唯一约束；SSE 客户端使用序号作为断点补发断线期间的事件。`(workflow_run_id, idempotency_key)` 防止恢复或重试时追加重复事件。
@@ -259,7 +267,9 @@ synced
 failed
 ```
 
-`external_document_id` 保存 Dify 文档 ID；同步失败不影响告警工作流完成，但需要可重试。
+`diagnosis_report_id` 唯一，保证一份已批准报告最多生成一条案例。`knowledge_sync_attempt` 记录实际同步尝试次数；`external_document_id` 保存外部知识服务返回的文档 ID，错误代码和脱敏错误消息用于页面诊断。同步成功时间写入 `synced_at`。
+
+案例创建与批准后的终态流转位于同一数据库事务，并追加 `case_created` 事件。同步任务使用稳定幂等键 `case-sync:{case_id}`，依次追加开始、成功或失败事件；重复执行已同步案例时直接返回已有结果。同步失败不影响告警工作流完成，可通过 API 重新投递。
 
 ## 4. LangGraph 状态
 

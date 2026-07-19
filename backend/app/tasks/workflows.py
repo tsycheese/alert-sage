@@ -10,12 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.core.config import get_settings
 from app.tasks.celery_app import celery_app
 from app.workflows.alert.checkpoint import open_alert_workflow_service
-from app.workflows.alert.service import AlertWorkflowService
+from app.workflows.alert.service import AlertWorkflowService, WorkflowExecutionResult
 
 WorkflowOperation = Callable[[AlertWorkflowService], Awaitable[object]]
 
 
-async def _run_locked(workflow_run_id: UUID, operation: WorkflowOperation) -> None:
+async def _run_locked(workflow_run_id: UUID, operation: WorkflowOperation) -> object | None:
     settings = get_settings()
     engine = create_async_engine(settings.database_url, pool_pre_ping=True)
     session_factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
@@ -29,12 +29,12 @@ async def _run_locked(workflow_run_id: UUID, operation: WorkflowOperation) -> No
     try:
         acquired = bool(await lock.acquire())
         if not acquired:
-            return
+            return None
         async with open_alert_workflow_service(
             session_factory=session_factory,
             database_url=settings.database_url,
         ) as service:
-            await operation(service)
+            return await operation(service)
     finally:
         with suppress(Exception):
             await redis.publish(f"alert-sage:workflow:{workflow_run_id}", "changed")
@@ -48,14 +48,15 @@ async def _run_locked(workflow_run_id: UUID, operation: WorkflowOperation) -> No
 @celery_app.task(name="alert_sage.workflow.start")
 def run_workflow_start(workflow_run_id: str) -> None:
     run_id = UUID(workflow_run_id)
-    asyncio.run(_run_locked(run_id, lambda service: service.execute_start(run_id)))
+    result = asyncio.run(_run_locked(run_id, lambda service: service.execute_start(run_id)))
+    _dispatch_case_sync(result)
 
 
 @celery_app.task(name="alert_sage.workflow.resume")
 def run_workflow_resume(workflow_run_id: str, decision_id: str) -> None:
     run_id = UUID(workflow_run_id)
     stored_decision_id = UUID(decision_id)
-    asyncio.run(
+    result = asyncio.run(
         _run_locked(
             run_id,
             lambda service: service.execute_resume(
@@ -64,9 +65,22 @@ def run_workflow_resume(workflow_run_id: str, decision_id: str) -> None:
             ),
         )
     )
+    _dispatch_case_sync(result)
 
 
 @celery_app.task(name="alert_sage.workflow.retry")
 def run_workflow_retry(workflow_run_id: str) -> None:
     run_id = UUID(workflow_run_id)
-    asyncio.run(_run_locked(run_id, lambda service: service.execute_retry(run_id)))
+    result = asyncio.run(_run_locked(run_id, lambda service: service.execute_retry(run_id)))
+    _dispatch_case_sync(result)
+
+
+def _dispatch_case_sync(result: object | None) -> None:
+    if not isinstance(result, WorkflowExecutionResult) or result.case_id is None:
+        return
+    from app.tasks.cases import run_case_sync
+
+    run_case_sync.apply_async(
+        args=[str(result.case_id)],
+        task_id=f"case-sync-{result.case_id}",
+    )

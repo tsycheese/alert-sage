@@ -5,7 +5,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.alert import Alert
+from app.models.case import Case
 from app.models.diagnosis import DiagnosisReport, HumanDecision
+from app.models.enums import KnowledgeSyncStatus
 from app.models.workflow import WorkflowEvent, WorkflowRun
 
 
@@ -73,3 +75,13 @@ class WorkflowQueryService:
             )
         )
         return run, events
+
+    async def case_sync_active(self, workflow_run_id: UUID) -> bool:
+        sync_status = await self.session.scalar(
+            select(Case.knowledge_sync_status)
+            .join(DiagnosisReport, Case.diagnosis_report_id == DiagnosisReport.id)
+            .where(DiagnosisReport.workflow_run_id == workflow_run_id)
+            .order_by(Case.created_at.desc())
+            .limit(1)
+        )
+        return sync_status in {KnowledgeSyncStatus.PENDING, KnowledgeSyncStatus.SYNCING}

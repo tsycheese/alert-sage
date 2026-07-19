@@ -24,6 +24,7 @@ from app.db.base import Base
 from app.models.enums import HumanDecisionAction
 
 if TYPE_CHECKING:
+    from app.models.case import Case
     from app.models.workflow import WorkflowRun
 
 
@@ -53,6 +54,7 @@ class DiagnosisReport(Base):
 
     workflow_run: Mapped[WorkflowRun] = relationship(back_populates="diagnosis_reports")
     human_decision: Mapped[HumanDecision | None] = relationship(back_populates="diagnosis_report")
+    case: Mapped[Case | None] = relationship(back_populates="diagnosis_report")
 
 
 class HumanDecision(Base):

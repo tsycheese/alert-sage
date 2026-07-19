@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   AlertResponse,
   ApiErrorResponse,
+  CaseResponse,
   WorkflowDetailResponse,
 } from "./api/generated";
 import { renderApp } from "./test/renderApp";
@@ -61,6 +62,43 @@ const WORKFLOW: WorkflowDetailResponse = {
   decision: null,
 };
 
+const COMPLETED_WORKFLOW: WorkflowDetailResponse = {
+  ...WORKFLOW,
+  run: {
+    ...WORKFLOW.run,
+    status: "completed",
+    current_node: "finalize",
+    finished_at: "2026-07-18T06:32:00Z",
+  },
+};
+
+const FAILED_CASE: CaseResponse = {
+  id: "319f73e2-c928-70b2-b37a-10f876a72565",
+  diagnosis_report_id: WORKFLOW.report!.id,
+  title: "order-service: HighCPUUsage 处置案例",
+  symptom: "CPU 使用率持续 5 分钟超过阈值",
+  root_cause: "慢查询导致 CPU 饱和",
+  resolution: "检查查询计划并临时扩容",
+  evidence: [],
+  tags: ["order-service", "HighCPUUsage", "critical"],
+  knowledge_sync_status: "failed",
+  knowledge_sync_attempt: 1,
+  external_document_id: null,
+  sync_error_code: "TimeoutError",
+  sync_error_message: "knowledge service timeout",
+  synced_at: null,
+  created_at: "2026-07-18T06:32:00Z",
+  updated_at: "2026-07-18T06:32:10Z",
+};
+
+const PENDING_CASE: CaseResponse = {
+  ...FAILED_CASE,
+  knowledge_sync_status: "pending",
+  knowledge_sync_attempt: 0,
+  sync_error_code: null,
+  sync_error_message: null,
+};
+
 function jsonResponse(
   body: unknown,
   status = 200,
@@ -83,6 +121,16 @@ function requestUrl(input: RequestInfo | URL): string {
 function requestMethod(input: RequestInfo | URL, init?: RequestInit): string {
   if (init?.method) return init.method;
   return input instanceof Request ? input.method : "GET";
+}
+
+class MockEventSource {
+  onmessage: ((event: MessageEvent) => void) | null = null;
+
+  addEventListener(): void {}
+
+  removeEventListener(): void {}
+
+  close(): void {}
 }
 
 function healthResponse(): Response {
@@ -210,16 +258,6 @@ describe("Alert Sage routes", () => {
   }, 20_000);
 
   it("renders a diagnosis report and submits a human decision", async () => {
-    class MockEventSource {
-      onmessage: ((event: MessageEvent) => void) | null = null;
-
-      addEventListener(): void {}
-
-      removeEventListener(): void {}
-
-      close(): void {}
-    }
-
     vi.stubGlobal("EventSource", MockEventSource);
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = requestUrl(input);
@@ -257,6 +295,72 @@ describe("Alert Sage routes", () => {
         action: "approve",
         actor: "demo-user",
       });
+    });
+  });
+
+  it("renders an approved case and retries failed knowledge sync", async () => {
+    vi.stubGlobal("EventSource", MockEventSource);
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = requestUrl(input);
+      if (url.includes("/health/live")) return healthResponse();
+      if (url.endsWith("/events?after=0")) {
+        return jsonResponse({ items: [], last_sequence: 0 });
+      }
+      if (url.endsWith("/workflow")) return jsonResponse(COMPLETED_WORKFLOW);
+      if (url.endsWith("/case/retry") && requestMethod(input, init) === "POST") {
+        return jsonResponse(
+          { case_id: FAILED_CASE.id, status: "pending", dispatched: true },
+          202,
+        );
+      }
+      if (url.endsWith("/case")) return jsonResponse(FAILED_CASE);
+      return jsonResponse(ALERT);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderApp(`/alerts/${ALERT.id}`);
+
+    expect(await screen.findByRole("heading", { name: FAILED_CASE.title }))
+      .toBeInTheDocument();
+    expect(screen.getByText("同步失败")).toBeInTheDocument();
+    expect(screen.getByText("慢查询导致 CPU 饱和")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /重试案例同步/ }));
+
+    await waitFor(() => {
+      const retryCall = fetchMock.mock.calls.find(([input]) =>
+        requestUrl(input).endsWith("/case/retry"),
+      );
+      expect(retryCall?.[1]?.method).toBe("POST");
+    });
+  });
+
+  it("can redispatch a case left pending before task delivery", async () => {
+    vi.stubGlobal("EventSource", MockEventSource);
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = requestUrl(input);
+      if (url.includes("/health/live")) return healthResponse();
+      if (url.endsWith("/events?after=0")) {
+        return jsonResponse({ items: [], last_sequence: 0 });
+      }
+      if (url.endsWith("/workflow")) return jsonResponse(COMPLETED_WORKFLOW);
+      if (url.endsWith("/case/retry") && requestMethod(input, init) === "POST") {
+        return jsonResponse(
+          { case_id: PENDING_CASE.id, status: "pending", dispatched: true },
+          202,
+        );
+      }
+      if (url.endsWith("/case")) return jsonResponse(PENDING_CASE);
+      return jsonResponse(ALERT);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderApp(`/alerts/${ALERT.id}`);
+
+    fireEvent.click(await screen.findByRole("button", { name: /重新投递案例同步/ }));
+
+    await waitFor(() => {
+      const retryCall = fetchMock.mock.calls.find(([input]) =>
+        requestUrl(input).endsWith("/case/retry"),
+      );
+      expect(retryCall?.[1]?.method).toBe("POST");
     });
   });
 

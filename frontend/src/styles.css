@@ -370,6 +370,17 @@ a {
   color: #334155;
 }
 
+.workflow-panel .case-panel {
+  padding: 16px;
+  border: 1px solid #b7e4c7;
+  border-radius: 10px;
+  background: #f6ffed;
+}
+
+.workflow-panel .case-panel .ant-alert {
+  margin-top: 12px;
+}
+
 .detail-skeleton {
   min-height: 420px;
 }

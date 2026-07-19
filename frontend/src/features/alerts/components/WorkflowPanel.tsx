@@ -9,9 +9,14 @@ import { Alert, Button, Descriptions, Empty, Input, Space, Spin, Tag, Timeline, 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactElement } from "react";
 
-import type { HumanDecisionAction, WorkflowRunStatus } from "../../../api/generated";
+import type {
+  HumanDecisionAction,
+  KnowledgeSyncStatus,
+  WorkflowRunStatus,
+} from "../../../api/generated";
 import {
   ApiClientError,
+  retryCaseSync,
   retryWorkflow,
   startWorkflow,
   submitWorkflowDecision,
@@ -19,6 +24,7 @@ import {
 } from "../../../api/http";
 import {
   alertKeys,
+  alertCaseOptions,
   alertWorkflowEventsOptions,
   alertWorkflowOptions,
 } from "../queryOptions";
@@ -33,6 +39,18 @@ const RUN_STATUS_LABELS: Record<WorkflowRunStatus, string> = {
   completed: "已完成",
   rejected: "已拒绝",
   failed: "执行失败",
+};
+const CASE_SYNC_LABELS: Record<KnowledgeSyncStatus, string> = {
+  pending: "待同步",
+  syncing: "同步中",
+  synced: "已同步",
+  failed: "同步失败",
+};
+const CASE_SYNC_COLORS: Record<KnowledgeSyncStatus, string> = {
+  pending: "default",
+  syncing: "processing",
+  synced: "success",
+  failed: "error",
 };
 
 interface WorkflowPanelProps {
@@ -51,18 +69,25 @@ export function WorkflowPanel({ alertId }: WorkflowPanelProps): ReactElement {
     ...alertWorkflowEventsOptions(alertId),
     enabled: Boolean(workflowQuery.data),
   });
+  const caseQuery = useQuery({
+    ...alertCaseOptions(alertId),
+    enabled: workflowQuery.data?.run.status === "completed",
+  });
 
   const refreshWorkflow = useCallback(async (): Promise<void> => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: alertKeys.detail(alertId) }),
       queryClient.invalidateQueries({ queryKey: alertKeys.workflow(alertId) }),
       queryClient.invalidateQueries({ queryKey: alertKeys.workflowEvents(alertId) }),
+      queryClient.invalidateQueries({ queryKey: alertKeys.case(alertId) }),
     ]);
   }, [alertId, queryClient]);
 
   useEffect(() => {
     const status = workflowQuery.data?.run.status;
-    if (!status || TERMINAL_STATUSES.has(status)) return undefined;
+    const caseStatus = caseQuery.data?.knowledge_sync_status;
+    const caseSyncActive = caseStatus === "pending" || caseStatus === "syncing";
+    if (!status || (TERMINAL_STATUSES.has(status) && !caseSyncActive)) return undefined;
     const source = new EventSource(workflowStreamUrl(alertId));
     source.onmessage = () => void refreshWorkflow();
     const eventNames = [
@@ -74,6 +99,10 @@ export function WorkflowPanel({ alertId }: WorkflowPanelProps): ReactElement {
       "workflow_completed",
       "workflow_rejected",
       "workflow_failed",
+      "case_created",
+      "case_sync_started",
+      "case_sync_succeeded",
+      "case_sync_failed",
     ];
     const onWorkflowEvent = (): void => {
       void refreshWorkflow();
@@ -83,7 +112,12 @@ export function WorkflowPanel({ alertId }: WorkflowPanelProps): ReactElement {
       eventNames.forEach((name) => source.removeEventListener(name, onWorkflowEvent));
       source.close();
     };
-  }, [alertId, refreshWorkflow, workflowQuery.data?.run.status]);
+  }, [
+    alertId,
+    caseQuery.data?.knowledge_sync_status,
+    refreshWorkflow,
+    workflowQuery.data?.run.status,
+  ]);
 
   const startMutation = useMutation({
     mutationFn: () =>
@@ -119,6 +153,10 @@ export function WorkflowPanel({ alertId }: WorkflowPanelProps): ReactElement {
         pendingDecision.current = null;
       }
     },
+  });
+  const caseRetryMutation = useMutation({
+    mutationFn: () => retryCaseSync(alertId),
+    onSuccess: refreshWorkflow,
   });
 
   if (workflowQuery.isPending) {
@@ -242,6 +280,64 @@ export function WorkflowPanel({ alertId }: WorkflowPanelProps): ReactElement {
           </Space>
           {decisionMutation.isError ? <Alert type="error" showIcon title="提交决策失败" /> : null}
         </section>
+      ) : null}
+
+      {run.status === "completed" && caseQuery.data ? (
+        <section className="case-panel" aria-labelledby="case-title">
+          <Space wrap>
+            <Title level={4} id="case-title">{caseQuery.data.title}</Title>
+            <Tag color={CASE_SYNC_COLORS[caseQuery.data.knowledge_sync_status]}>
+              {CASE_SYNC_LABELS[caseQuery.data.knowledge_sync_status]}
+            </Tag>
+          </Space>
+          <Descriptions size="small" column={1} colon={false}>
+            <Descriptions.Item label="故障现象">{caseQuery.data.symptom}</Descriptions.Item>
+            <Descriptions.Item label="根因">{caseQuery.data.root_cause}</Descriptions.Item>
+            <Descriptions.Item label="处置方案">{caseQuery.data.resolution}</Descriptions.Item>
+            <Descriptions.Item label="知识文档 ID">
+              <Text className="monospace">{caseQuery.data.external_document_id ?? "—"}</Text>
+            </Descriptions.Item>
+          </Descriptions>
+          <Space wrap>
+            {caseQuery.data.tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}
+            {caseQuery.data.knowledge_sync_status === "pending" ? (
+              <Button
+                size="small"
+                icon={<ReloadOutlined />}
+                loading={caseRetryMutation.isPending}
+                onClick={() => caseRetryMutation.mutate()}
+              >
+                重新投递案例同步
+              </Button>
+            ) : null}
+          </Space>
+          {caseQuery.data.knowledge_sync_status === "failed" ? (
+            <Alert
+              type="error"
+              showIcon
+              title={caseQuery.data.sync_error_code ?? "案例同步失败"}
+              description={caseQuery.data.sync_error_message}
+              action={
+                <Button
+                  icon={<ReloadOutlined />}
+                  loading={caseRetryMutation.isPending}
+                  onClick={() => caseRetryMutation.mutate()}
+                >
+                  重试案例同步
+                </Button>
+              }
+            />
+          ) : null}
+        </section>
+      ) : null}
+
+      {run.status === "completed" && caseQuery.isError ? (
+        <Alert
+          type="warning"
+          showIcon
+          title="案例加载失败"
+          action={<Button onClick={() => void caseQuery.refetch()}>重新加载</Button>}
+        />
       ) : null}
 
       {eventsQuery.data?.items.length ? (

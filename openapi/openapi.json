@@ -265,6 +265,156 @@
         "title": "ApiErrorResponse",
         "type": "object"
       },
+      "CaseResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "diagnosis_report_id": {
+            "format": "uuid",
+            "title": "Diagnosis Report Id",
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "external_document_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Document Id"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "knowledge_sync_attempt": {
+            "title": "Knowledge Sync Attempt",
+            "type": "integer"
+          },
+          "knowledge_sync_status": {
+            "$ref": "#/components/schemas/KnowledgeSyncStatus"
+          },
+          "resolution": {
+            "title": "Resolution",
+            "type": "string"
+          },
+          "root_cause": {
+            "title": "Root Cause",
+            "type": "string"
+          },
+          "symptom": {
+            "title": "Symptom",
+            "type": "string"
+          },
+          "sync_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Error Code"
+          },
+          "sync_error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sync Error Message"
+          },
+          "synced_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Synced At"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "diagnosis_report_id",
+          "title",
+          "symptom",
+          "root_cause",
+          "resolution",
+          "evidence",
+          "tags",
+          "knowledge_sync_status",
+          "knowledge_sync_attempt",
+          "external_document_id",
+          "sync_error_code",
+          "sync_error_message",
+          "synced_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CaseResponse",
+        "type": "object"
+      },
+      "CaseSyncAcceptedResponse": {
+        "properties": {
+          "case_id": {
+            "format": "uuid",
+            "title": "Case Id",
+            "type": "string"
+          },
+          "dispatched": {
+            "title": "Dispatched",
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/KnowledgeSyncStatus"
+          }
+        },
+        "required": [
+          "case_id",
+          "status",
+          "dispatched"
+        ],
+        "title": "CaseSyncAcceptedResponse",
+        "type": "object"
+      },
       "DiagnosisReportResponse": {
         "properties": {
           "confidence": {
@@ -472,6 +622,16 @@
         "title": "HumanDecisionResponse",
         "type": "object"
       },
+      "KnowledgeSyncStatus": {
+        "enum": [
+          "pending",
+          "syncing",
+          "synced",
+          "failed"
+        ],
+        "title": "KnowledgeSyncStatus",
+        "type": "string"
+      },
       "WorkflowAcceptedResponse": {
         "properties": {
           "dispatched": {
@@ -627,7 +787,11 @@
           "human_decision_received",
           "workflow_completed",
           "workflow_rejected",
-          "workflow_failed"
+          "workflow_failed",
+          "case_created",
+          "case_sync_started",
+          "case_sync_succeeded",
+          "case_sync_failed"
         ],
         "title": "WorkflowEventType",
         "type": "string"
@@ -1022,6 +1186,152 @@
         "summary": "Get Alert",
         "tags": [
           "alerts"
+        ]
+      }
+    },
+    "/api/v1/alerts/{alert_id}/case": {
+      "get": {
+        "operationId": "get_case_api_v1_alerts__alert_id__case_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alert_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Alert Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Get Case",
+        "tags": [
+          "cases"
+        ]
+      }
+    },
+    "/api/v1/alerts/{alert_id}/case/retry": {
+      "post": {
+        "operationId": "retry_case_sync_api_v1_alerts__alert_id__case_retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alert_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Alert Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseSyncAcceptedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Retry Case Sync",
+        "tags": [
+          "cases"
         ]
       }
     },

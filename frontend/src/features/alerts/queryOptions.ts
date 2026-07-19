@@ -1,6 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 
-import { getAlert, getWorkflow, listAlerts, listWorkflowEvents } from "../../api/http";
+import { getAlert, getCase, getWorkflow, listAlerts, listWorkflowEvents } from "../../api/http";
 import type { AlertListParams } from "../../api/http";
 
 export const alertKeys = {
@@ -11,6 +11,7 @@ export const alertKeys = {
   detail: (alertId: string) => [...alertKeys.details(), alertId] as const,
   workflow: (alertId: string) => [...alertKeys.detail(alertId), "workflow"] as const,
   workflowEvents: (alertId: string) => [...alertKeys.workflow(alertId), "events"] as const,
+  case: (alertId: string) => [...alertKeys.detail(alertId), "case"] as const,
 };
 
 export function alertListOptions(params: AlertListParams) {
@@ -35,6 +36,21 @@ export function alertWorkflowEventsOptions(alertId: string) {
   return queryOptions({
     queryKey: alertKeys.workflowEvents(alertId),
     queryFn: ({ signal }) => listWorkflowEvents(alertId, 0, signal),
+  });
+}
+
+export function alertCaseOptions(alertId: string) {
+  return queryOptions({
+    queryKey: alertKeys.case(alertId),
+    queryFn: ({ signal }) => getCase(alertId, signal),
+    retry: (failureCount, error) =>
+      error instanceof Error && "status" in error && error.status === 404
+        ? false
+        : failureCount < 2,
+    refetchInterval: (query) => {
+      const status = query.state.data?.knowledge_sync_status;
+      return status === "pending" || status === "syncing" ? 1_000 : false;
+    },
   });
 }
 

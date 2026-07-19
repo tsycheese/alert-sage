@@ -6,7 +6,7 @@ Alert Sage 是一个面向运维场景的 AI 告警诊断助手，以“告警�
 
 ## 当前状态
 
-`V1.3C 异步人工确认闭环`：已完成七节点 LangGraph、PostgreSQL Checkpointer、Celery Worker、Redis Broker/短期锁/事件通知、工作流 API、SSE 断点补发，以及 Web 诊断报告与人工确认面板。工作流运行、事件、工具执行、版本化报告和人工决策均写入 PostgreSQL 业务事实表。
+`V1.4 案例沉淀闭环`：人工批准后会在同一业务事务中生成结构化案例，再由独立 Celery 任务通过可替换的知识库适配器异步同步。案例与同步状态写入 PostgreSQL，可在 Web 查询，失败可人工重试；当前使用确定性模拟知识库，下一阶段接入 Dify。
 
 ## 技术栈
 
