@@ -103,16 +103,16 @@ flowchart TD
     COLLECT --> DIAGNOSE["diagnose"]
     DIAGNOSE --> RECOMMEND["recommend"]
     RECOMMEND --> REVIEW["human_review / interrupt"]
-    REVIEW -->|approve| ARCHIVE["archive_case"]
-    REVIEW -->|reject| REJECTED["mark_rejected"]
+    REVIEW -->|approve / reject| FINALIZE["finalize"]
     REVIEW -->|reanalyze| DIAGNOSE
-    ARCHIVE --> END(["END"])
-    REJECTED --> END
+    FINALIZE --> END(["END"])
 ```
 
 `collect_context` 内部并发调用日志、指标、CMDB 和知识检索工具。每个工具具有独立的超时、重试、错误记录和幂等键。部分工具失败时保留已取得的证据，并在报告中声明信息缺失。
 
 `human_review` 使用持久化 checkpoint。恢复执行时节点可能重新进入，因此暂停前的写操作必须幂等，外部副作用应放在人工批准之后。
+
+V1.3B 已按上图实现七个节点。`finalize` 只根据已持久化的人工决策写入完成或驳回终态；批准后的 `cases` 生成仍属于后续案例沉淀增量，不在当前节点中伪造未落地结果。
 
 ## 6. Web 与 API
 
@@ -215,7 +215,10 @@ alert-sage/
 │  │  ├─ workflows/alert/
 │  │  │  ├─ graph.py             # LangGraph 图定义
 │  │  │  ├─ state.py             # 工作流状态结构
-│  │  │  └─ nodes/               # 解析、采集、诊断、确认、沉淀节点
+│  │  │  ├─ nodes.py             # 七个纯编排节点
+│  │  │  ├─ adapters.py          # 工具与诊断模型协议、模拟实现
+│  │  │  ├─ checkpoint.py        # PostgreSQL Checkpointer 生命周期
+│  │  │  └─ service.py           # 业务事务、事件和恢复编排
 │  │  ├─ tools/                  # 日志、指标、CMDB、案例工具
 │  │  ├─ integrations/
 │  │  │  ├─ dify/                # Dify 检索适配器

@@ -69,6 +69,35 @@ class DiagnosisReportPayload(BaseModel):
         return self
 
 
+class DiagnosisDraftPayload(BaseModel):
+    """Structured model output before recommendations are generated."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["1.0"] = "1.0"
+    summary: NonEmptyText
+    root_causes: list[RootCauseItem] = Field(min_length=1)
+    evidence: list[EvidenceItem] = Field(min_length=1)
+    confidence: float = Field(ge=0, le=1, allow_inf_nan=False)
+    model_name: NonEmptyText
+    prompt_version: NonEmptyText
+
+    @model_validator(mode="after")
+    def require_resolvable_evidence(self) -> "DiagnosisDraftPayload":
+        evidence_ids = [item.id for item in self.evidence]
+        if len(evidence_ids) != len(set(evidence_ids)):
+            raise ValueError("evidence ids must be unique")
+        missing = {
+            reference
+            for root_cause in self.root_causes
+            for reference in root_cause.evidence_refs
+            if reference not in evidence_ids
+        }
+        if missing:
+            raise ValueError(f"unknown evidence references: {', '.join(sorted(missing))}")
+        return self
+
+
 class HumanDecisionCommand(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -83,3 +112,10 @@ class HumanDecisionCommand(BaseModel):
         if self.action is HumanDecisionAction.REANALYZE and self.comment is None:
             raise ValueError("comment is required when action is reanalyze")
         return self
+
+
+class WorkflowResumePayload(HumanDecisionCommand):
+    actor: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=128),
+    ]

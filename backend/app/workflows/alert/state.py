@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, TypedDict
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints
@@ -17,6 +17,8 @@ class ContextSnapshot(BaseModel):
     data: dict[str, JsonValue] = Field(default_factory=dict)
     source_refs: list[str] = Field(default_factory=list)
     collected_at: datetime
+    attempts: int = Field(default=1, ge=1)
+    duration_ms: int = Field(default=0, ge=0)
 
 
 class WorkflowToolError(BaseModel):
@@ -28,6 +30,7 @@ class WorkflowToolError(BaseModel):
     message: str
     retryable: bool
     attempts: int = Field(ge=1)
+    duration_ms: int = Field(default=0, ge=0)
 
 
 class WorkflowHumanDecision(BaseModel):
@@ -56,5 +59,33 @@ class AlertWorkflowState(BaseModel):
     report_id: UUID | None = None
     report_version: int = Field(default=0, ge=0)
     human_decision: WorkflowHumanDecision | None = None
+    decision_idempotency_key: str | None = None
     reanalysis_count: int = Field(default=0, ge=0)
+    final_status: Literal["completed", "rejected"] | None = None
     warnings: list[str] = Field(default_factory=list)
+
+
+class AlertGraphState(TypedDict, total=False):
+    """JSON-safe shape stored by LangGraph's checkpoint serializer."""
+
+    schema_version: str
+    alert_id: str
+    workflow_run_id: str
+    thread_id: str
+    alert: dict[str, JsonValue]
+    classification: dict[str, JsonValue] | None
+    contexts: dict[str, dict[str, JsonValue]]
+    tool_errors: list[dict[str, JsonValue]]
+    diagnosis: dict[str, JsonValue] | None
+    recommendations: list[dict[str, JsonValue]]
+    report_id: str | None
+    report_version: int
+    human_decision: dict[str, JsonValue] | None
+    decision_idempotency_key: str | None
+    reanalysis_count: int
+    final_status: str | None
+    warnings: list[str]
+
+
+def validate_graph_state(state: AlertGraphState) -> AlertWorkflowState:
+    return AlertWorkflowState.model_validate(state)

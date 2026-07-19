@@ -31,7 +31,7 @@ docker compose up --build
 Compose 会依次：
 
 1. 启动 PostgreSQL 和 Redis，并等待健康检查。
-2. 构建 API 镜像，执行 Alembic 迁移并启动 Uvicorn。
+2. 构建 API 镜像，执行 Alembic 迁移、初始化 LangGraph checkpoint 表并启动 Uvicorn。
 3. 构建 React 静态资源，通过 Nginx 提供页面并代理 `/api`。
 
 检查状态：
@@ -69,6 +69,7 @@ docker compose up -d postgres redis
 Set-Location backend
 uv sync --python 3.12
 uv run alembic upgrade head
+uv run python -m scripts.setup_checkpointer
 uv run uvicorn app.main:app --reload
 ```
 
@@ -150,12 +151,16 @@ npm run build
 - `workflow_runs`、`workflow_events`、`tool_executions`、`diagnosis_reports`、`human_decisions` 已通过迁移创建。
 - 数据库能阻止同一告警存在多个活动运行，以及重复事件序号、工具执行和人工决策。
 - 工作流 State、诊断报告和人工决策输入通过严格 Pydantic Schema 校验。
+- 七节点 LangGraph 可运行至 `human_review` 并持久化中断；关闭并重新创建运行时后可使用相同 `thread_id` 恢复。
+- 指标、日志、CMDB 和知识四个模拟工具并发执行；单个工具超时会记录失败和告警，但可使用剩余证据继续诊断。
+- 批准和驳回进入对应终态；重新分析保留旧报告与人工反馈，并生成下一版本报告。
+- LangGraph checkpoint 表由官方 Checkpointer 管理，Alembic 只管理业务表且不会误删供应商表。
 
 ## 7. 已知边界
 
-- V1.3A 尚未实现 LangGraph 节点、Celery Worker、SSE、人工确认 API 和 Dify；详情页仍展示对应的诚实空状态。
+- V1.3B 尚未实现 Celery Worker、SSE、人工确认 API 和 Dify；当前工作流由后端应用服务在单进程中调用，详情页仍展示对应的诚实空状态。
 - Redis 在 V0 中仅作为已启动的基础设施，业务代码尚未使用。
-- `cases`、LangGraph checkpoint 表和 Outbox 尚未落地，将在案例闭环、Checkpointer 和异步投递分别实现时加入。
+- `cases` 和 Outbox 尚未落地，将在案例闭环和异步投递分别实现时加入。
 
 ## 8. V1.3A 专项验证
 
@@ -194,3 +199,44 @@ ORDER BY table_name;
 ```
 
 预期迁移版本为 `0002`，并能看到 `alerts`、`workflow_runs`、`workflow_events`、`tool_executions`、`diagnosis_reports` 和 `human_decisions`。
+
+## 9. V1.3B 专项验证
+
+V1.3B 新增 LangGraph 和官方 PostgreSQL Checkpointer。安装锁定依赖后运行：
+
+```powershell
+Set-Location backend
+uv sync --python 3.12
+
+$env:ALERT_SAGE_TEST_DATABASE_URL = `
+  "postgresql+psycopg://alert_sage:alert_sage@localhost:5432/alert_sage"
+
+uv run pytest -q tests/test_alert_workflow_runtime.py
+uv run pytest -q
+uv run python -m scripts.setup_checkpointer
+uv run alembic check
+```
+
+运行时专项测试使用随机临时 Schema，同时创建业务表和四张 Checkpointer 供应商表；测试结束后整体删除 Schema。测试覆盖：
+
+1. 初次运行依次完成解析、分类、上下文采集、诊断和建议，并停在人工确认。
+2. 第一个独立 Python 进程在中断后退出，第二个独立进程从 PostgreSQL 读取同一 `thread_id` 的 checkpoint 并批准完成剩余节点。
+3. 重新分析生成第二版报告，重复决策幂等且不会错误作用于新报告。
+4. 单个上下文工具连续失败两次时记录失败，其他证据仍能生成报告。
+5. 不符合 Schema 的模型输出不会写入报告，运行与告警进入失败状态。
+
+也可以使用开发 CLI 手工演示两个独立进程。先创建一条告警并记录其 UUID，然后分别运行：
+
+```powershell
+uv run python -m scripts.run_workflow start `
+  --alert-id "<alert-id>" `
+  --idempotency-key "demo-workflow-start-001"
+
+uv run python -m scripts.run_workflow resume `
+  --workflow-run-id "<workflow-run-id>" `
+  --action approve `
+  --decision-key "demo-workflow-decision-001" `
+  --actor "demo-user"
+```
+
+第一条命令返回 `waiting_for_approval` 后进程已经退出；第二条命令会创建新的运行时并从数据库恢复。该 CLI 是 V1.3B 的开发验收入口，不是对外 API。

@@ -6,15 +6,15 @@ Alert Sage 是一个面向运维场景的 AI 告警诊断助手，以“告警�
 
 ## 当前状态
 
-`V1.3A 工作流基础`：已完成告警管理 API 与 Web，并落地工作流运行、事件、工具执行、诊断报告和人工决策的数据模型、状态转换守卫、结构化 Schema 与数据库约束。LangGraph 节点执行、人工确认 API、Celery 和 SSE 将在后续 V1.3 增量实现。
+`V1.3B 可恢复工作流`：已完成七节点 LangGraph、四个并发模拟工具、结构化诊断输出、PostgreSQL Checkpointer、人工中断与批准/驳回/重新分析恢复。工作流运行、事件、工具执行、版本化报告和人工决策同步写入业务事实表；人工确认 API、Celery 和 SSE 将在后续 V1.3 增量实现。
 
 ## 技术栈
 
-- 后端：Python 3.12、FastAPI、SQLAlchemy、Alembic、uv
+- 后端：Python 3.12、FastAPI、LangGraph、SQLAlchemy、Alembic、uv
 - 前端：React、TypeScript、Vite、Ant Design、TanStack Query
 - 数据：PostgreSQL、Redis
 - 交付：Docker Compose、pytest、Vitest
-- 后续：LangGraph、Celery、Dify、Prometheus、Grafana
+- 后续：Celery、Dify、Prometheus、Grafana
 
 ## Docker 一键启动
 

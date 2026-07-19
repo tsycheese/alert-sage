@@ -1,6 +1,6 @@
 # 核心数据模型
 
-> 实现状态：V1.3A 已落地 `workflow_runs`、`workflow_events`、`tool_executions`、`diagnosis_reports` 和 `human_decisions`；`cases` 仍属于后续闭环增量。
+> 实现状态：V1.3B 已将 `workflow_runs`、`workflow_events`、`tool_executions`、`diagnosis_reports`、`human_decisions` 与 LangGraph PostgreSQL Checkpointer 接通；`cases` 仍属于后续闭环增量。
 
 ## 1. 建模目标
 
@@ -280,7 +280,9 @@ class AlertWorkflowState(BaseModel):
     report_id: UUID | None
     report_version: int
     human_decision: WorkflowHumanDecision | None
+    decision_idempotency_key: str | None
     reanalysis_count: int
+    final_status: Literal["completed", "rejected"] | None
     warnings: list[str]
 ```
 
@@ -291,7 +293,13 @@ class AlertWorkflowState(BaseModel):
 - 并行节点写同一字段时使用明确 reducer，避免结果互相覆盖。
 - `workflow_run_id` 与 `thread_id` 分工明确：前者是业务运行 ID，后者是 checkpoint 游标。
 
-### 4.1 状态转换护栏
+### 4.1 Checkpoint 表
+
+`checkpoints`、`checkpoint_blobs`、`checkpoint_writes` 和 `checkpoint_migrations` 由官方 `langgraph-checkpoint-postgres` 的 `setup()` 管理，不纳入项目 Alembic ORM 元数据。Alembic 自动差异检查显式忽略这四张供应商表，避免生成误删除迁移。
+
+Checkpoint 只保存 JSON 安全的图状态；反序列化器禁用任意 JSON/MessagePack 模块导入。业务查询、审计与权限判断仍然只读取项目业务表。
+
+### 4.2 状态转换护栏
 
 状态修改必须经过 `app.workflows.alert.transitions`，相同状态重复投递视为幂等 no-op。主要路径为：
 

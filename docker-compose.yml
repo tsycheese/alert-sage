@@ -40,7 +40,7 @@ services:
     command:
       - sh
       - -c
-      - uv run --no-dev alembic upgrade head && uv run --no-dev uvicorn app.main:app --host 0.0.0.0 --port 8000
+      - uv run --no-dev alembic upgrade head && uv run --no-dev python -m scripts.setup_checkpointer && uv run --no-dev uvicorn app.main:app --host 0.0.0.0 --port 8000
     ports:
       - "${API_PORT:-8000}:8000"
     depends_on:
