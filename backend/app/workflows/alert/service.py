@@ -64,6 +64,13 @@ class WorkflowExecutionResult:
     state: AlertWorkflowState
 
 
+@dataclass(frozen=True, slots=True)
+class PreparedWorkflowRun:
+    workflow_run_id: UUID
+    alert_id: UUID
+    created: bool
+
+
 class AlertWorkflowService:
     def __init__(self, *, session_factory: async_sessionmaker[AsyncSession], graph: Any) -> None:
         self.session_factory = session_factory
@@ -75,12 +82,49 @@ class AlertWorkflowService:
         alert_id: UUID,
         idempotency_key: str,
     ) -> WorkflowExecutionResult:
-        run, alert, created = await self._prepare_run(
+        prepared = await self.prepare_start(
             alert_id=alert_id,
             idempotency_key=idempotency_key,
         )
-        if not created:
-            return await self.get_result(run.id)
+        if not prepared.created:
+            return await self.get_result(prepared.workflow_run_id)
+        return await self.execute_start(prepared.workflow_run_id)
+
+    async def prepare_start(
+        self,
+        *,
+        alert_id: UUID,
+        idempotency_key: str,
+    ) -> PreparedWorkflowRun:
+        run, _alert, created = await self._prepare_run(
+            alert_id=alert_id,
+            idempotency_key=idempotency_key,
+        )
+        return PreparedWorkflowRun(
+            workflow_run_id=run.id,
+            alert_id=run.alert_id,
+            created=created,
+        )
+
+    async def execute_start(self, workflow_run_id: UUID) -> WorkflowExecutionResult:
+        async with self.session_factory() as session:
+            run = await session.get(WorkflowRun, workflow_run_id)
+            if run is None:
+                raise WorkflowRunNotFoundError
+            if run.status in {
+                WorkflowRunStatus.WAITING_FOR_APPROVAL,
+                WorkflowRunStatus.COMPLETED,
+                WorkflowRunStatus.REJECTED,
+            }:
+                return await self.get_result(workflow_run_id)
+            alert = await session.get(Alert, run.alert_id)
+            if alert is None:
+                raise WorkflowStateConflictError("workflow alert no longer exists")
+
+        if run.status == WorkflowRunStatus.RUNNING:
+            snapshot = await self.graph.aget_state(self._graph_config(run.thread_id))
+            if snapshot.values:
+                return await self._drive(workflow_run_id, None)
 
         await self._mark_started(run.id)
         initial_state = AlertWorkflowState(
@@ -114,13 +158,103 @@ class AlertWorkflowService:
             comment=command.comment,
             actor=actor,
         )
-        should_resume = await self._persist_human_decision(workflow_run_id, resume)
+        should_resume, _decision_id = await self._persist_human_decision(workflow_run_id, resume)
         if not should_resume:
             return await self.get_result(workflow_run_id)
         return await self._drive(
             workflow_run_id,
             Command(resume=resume.model_dump(mode="json")),
         )
+
+    async def prepare_resume(
+        self,
+        *,
+        workflow_run_id: UUID,
+        command: HumanDecisionCommand,
+        actor: str,
+    ) -> UUID | None:
+        resume = WorkflowResumePayload(
+            idempotency_key=command.idempotency_key,
+            action=command.action,
+            comment=command.comment,
+            actor=actor,
+        )
+        should_resume, decision_id = await self._persist_human_decision(workflow_run_id, resume)
+        return decision_id if should_resume else None
+
+    async def execute_resume(
+        self,
+        *,
+        workflow_run_id: UUID,
+        decision_id: UUID,
+    ) -> WorkflowExecutionResult:
+        async with self.session_factory() as session:
+            decision = await session.get(HumanDecision, decision_id)
+            if decision is None:
+                raise WorkflowStateConflictError("human decision does not exist")
+            report = await session.get(DiagnosisReport, decision.diagnosis_report_id)
+            if report is None or report.workflow_run_id != workflow_run_id:
+                raise WorkflowStateConflictError("human decision does not belong to workflow")
+            run = await session.get(WorkflowRun, workflow_run_id)
+            if run is None:
+                raise WorkflowRunNotFoundError
+            if run.status in {WorkflowRunStatus.COMPLETED, WorkflowRunStatus.REJECTED}:
+                return await self.get_result(workflow_run_id)
+            resume = WorkflowResumePayload(
+                idempotency_key=decision.idempotency_key,
+                action=decision.action,
+                comment=decision.comment,
+                actor=decision.actor,
+            )
+            thread_id = run.thread_id
+        snapshot = await self.graph.aget_state(self._graph_config(thread_id))
+        graph_input: object = (
+            Command(resume=resume.model_dump(mode="json"))
+            if "human_review" in snapshot.next
+            else None
+        )
+        return await self._drive(
+            workflow_run_id,
+            graph_input,
+        )
+
+    async def prepare_retry(self, workflow_run_id: UUID) -> None:
+        async with self.session_factory() as session:
+            run = await self._locked_run(session, workflow_run_id)
+            if run.status == WorkflowRunStatus.QUEUED:
+                return
+            if run.status != WorkflowRunStatus.FAILED:
+                raise WorkflowStateConflictError(f"workflow status {run.status} cannot be retried")
+            ensure_workflow_run_status_transition(run.status, WorkflowRunStatus.QUEUED)
+            run.status = WorkflowRunStatus.QUEUED
+            run.attempt += 1
+            run.error_code = None
+            run.error_message = None
+            run.finished_at = None
+            await self._append_event(
+                session,
+                run,
+                idempotency_key=f"workflow:queued:attempt-{run.attempt}",
+                event_type=WorkflowEventType.WORKFLOW_QUEUED,
+                status=WorkflowRunStatus.QUEUED,
+                payload={"workflow_version": run.workflow_version, "attempt": run.attempt},
+            )
+            await session.commit()
+
+    async def execute_retry(self, workflow_run_id: UUID) -> WorkflowExecutionResult:
+        async with self.session_factory() as session:
+            run = await session.get(WorkflowRun, workflow_run_id)
+            if run is None:
+                raise WorkflowRunNotFoundError
+            thread_id = run.thread_id
+        snapshot = await self.graph.aget_state(self._graph_config(thread_id))
+        if snapshot.values:
+            await self._mark_started(workflow_run_id)
+            return await self._drive(workflow_run_id, None)
+        return await self.execute_start(workflow_run_id)
+
+    async def mark_dispatch_failed(self, workflow_run_id: UUID, error: Exception) -> None:
+        await self._mark_failed(workflow_run_id, error)
 
     async def get_result(self, workflow_run_id: UUID) -> WorkflowExecutionResult:
         async with self.session_factory() as session:
@@ -183,10 +317,10 @@ class AlertWorkflowService:
             await self._append_event(
                 session,
                 run,
-                idempotency_key="workflow:queued",
+                idempotency_key="workflow:queued:attempt-1",
                 event_type=WorkflowEventType.WORKFLOW_QUEUED,
                 status=WorkflowRunStatus.QUEUED,
-                payload={"workflow_version": WORKFLOW_VERSION},
+                payload={"workflow_version": WORKFLOW_VERSION, "attempt": 1},
             )
             await session.commit()
             return run, alert, True
@@ -195,6 +329,8 @@ class AlertWorkflowService:
         now = datetime.now(UTC)
         async with self.session_factory() as session:
             run = await self._locked_run(session, workflow_run_id)
+            if run.status == WorkflowRunStatus.RUNNING:
+                return
             alert = await self._locked_alert(session, run.alert_id)
             ensure_workflow_run_status_transition(run.status, WorkflowRunStatus.RUNNING)
             ensure_alert_status_transition(alert.status, AlertStatus.RUNNING)
@@ -204,10 +340,10 @@ class AlertWorkflowService:
             await self._append_event(
                 session,
                 run,
-                idempotency_key="workflow:started",
+                idempotency_key=f"workflow:started:attempt-{run.attempt}",
                 event_type=WorkflowEventType.WORKFLOW_STARTED,
                 status=WorkflowRunStatus.RUNNING,
-                payload={},
+                payload={"attempt": run.attempt},
             )
             await session.commit()
 
@@ -410,7 +546,7 @@ class AlertWorkflowService:
         self,
         workflow_run_id: UUID,
         resume: WorkflowResumePayload,
-    ) -> bool:
+    ) -> tuple[bool, UUID | None]:
         async with self.session_factory() as session:
             run = await self._locked_run(session, workflow_run_id)
             if run.status in {WorkflowRunStatus.COMPLETED, WorkflowRunStatus.REJECTED}:
@@ -422,7 +558,7 @@ class AlertWorkflowService:
                 if existing is None:
                     raise WorkflowStateConflictError("workflow is already terminal")
                 self._ensure_same_decision(existing, resume)
-                return False
+                return False, existing.id
             if run.status != WorkflowRunStatus.WAITING_FOR_APPROVAL:
                 raise WorkflowStateConflictError(
                     f"workflow status {run.status} does not accept human input"
@@ -443,17 +579,23 @@ class AlertWorkflowService:
             if existing is not None:
                 self._ensure_same_decision(existing, resume)
                 if existing.diagnosis_report_id != report.id:
-                    return False
+                    return False, existing.id
             else:
-                session.add(
-                    HumanDecision(
-                        diagnosis_report_id=report.id,
-                        idempotency_key=resume.idempotency_key,
-                        action=resume.action,
-                        comment=resume.comment,
-                        actor=resume.actor,
-                    )
+                report_decision = await session.scalar(
+                    select(HumanDecision).where(HumanDecision.diagnosis_report_id == report.id)
                 )
+                if report_decision is not None:
+                    raise WorkflowStateConflictError(
+                        "diagnosis report already has a human decision"
+                    )
+                existing = HumanDecision(
+                    diagnosis_report_id=report.id,
+                    idempotency_key=resume.idempotency_key,
+                    action=resume.action,
+                    comment=resume.comment,
+                    actor=resume.actor,
+                )
+                session.add(existing)
                 await session.flush()
 
             await self._append_event(
@@ -476,7 +618,7 @@ class AlertWorkflowService:
                 run.status = WorkflowRunStatus.REANALYZING
                 alert.status = AlertStatus.REANALYZING
             await session.commit()
-            return True
+            return True, existing.id
 
     async def _persist_final_status(
         self,
@@ -527,7 +669,7 @@ class AlertWorkflowService:
             await self._append_event(
                 session,
                 run,
-                idempotency_key="workflow:failed",
+                idempotency_key=f"workflow:failed:attempt-{run.attempt}",
                 event_type=WorkflowEventType.WORKFLOW_FAILED,
                 status=WorkflowRunStatus.FAILED,
                 payload={"error_code": run.error_code},

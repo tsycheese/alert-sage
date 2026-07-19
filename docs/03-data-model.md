@@ -1,6 +1,6 @@
 # 核心数据模型
 
-> 实现状态：V1.3B 已将 `workflow_runs`、`workflow_events`、`tool_executions`、`diagnosis_reports`、`human_decisions` 与 LangGraph PostgreSQL Checkpointer 接通；`cases` 仍属于后续闭环增量。
+> 实现状态：V1.3C 已将这些业务表接入工作流 API、Celery Worker、SSE 和 Web 人工确认；`cases` 仍属于后续闭环增量。
 
 ## 1. 建模目标
 

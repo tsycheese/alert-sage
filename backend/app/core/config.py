@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     database_url: str = "postgresql+psycopg://alert_sage:alert_sage@localhost:5432/alert_sage"
     test_database_url: str | None = None
+    redis_url: str = "redis://localhost:6379/1"
+    celery_broker_url: str = "redis://localhost:6379/0"
+    workflow_lock_ttl_seconds: int = 300
+    workflow_event_poll_seconds: float = 2.0
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 
 

@@ -348,6 +348,28 @@ a {
   margin: 8px auto 0;
 }
 
+.workflow-panel {
+  width: 100%;
+  min-height: 230px;
+}
+
+.workflow-panel .human-review {
+  padding: 16px;
+  border: 1px solid #f0c36a;
+  border-radius: 10px;
+  background: #fffaf0;
+}
+
+.workflow-panel .human-review .ant-input {
+  margin-bottom: 12px;
+}
+
+.workflow-panel .recommendation-list {
+  margin: 8px 0 0;
+  padding-left: 22px;
+  color: #334155;
+}
+
 .detail-skeleton {
   min-height: 420px;
 }

@@ -167,6 +167,66 @@ export type ApiErrorResponse = {
 };
 
 /**
+ * DiagnosisReportResponse
+ */
+export type DiagnosisReportResponse = {
+    /**
+     * Confidence
+     */
+    confidence: string;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Evidence
+     */
+    evidence: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Model Name
+     */
+    model_name: string;
+    /**
+     * Prompt Version
+     */
+    prompt_version: string;
+    /**
+     * Recommendations
+     */
+    recommendations: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Root Causes
+     */
+    root_causes: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Schema Version
+     */
+    schema_version: string;
+    /**
+     * Summary
+     */
+    summary: string;
+    /**
+     * Version
+     */
+    version: number;
+    /**
+     * Workflow Run Id
+     */
+    workflow_run_id: string;
+};
+
+/**
  * HealthResponse
  */
 export type HealthResponse = {
@@ -182,6 +242,211 @@ export type HealthResponse = {
      * Version
      */
     version: string;
+};
+
+/**
+ * HumanDecisionAction
+ */
+export type HumanDecisionAction = 'approve' | 'reject' | 'reanalyze';
+
+/**
+ * HumanDecisionRequest
+ */
+export type HumanDecisionRequest = {
+    action: HumanDecisionAction;
+    /**
+     * Actor
+     */
+    actor?: string;
+    /**
+     * Comment
+     */
+    comment?: string | null;
+    /**
+     * Idempotency Key
+     */
+    idempotency_key: string;
+};
+
+/**
+ * HumanDecisionResponse
+ */
+export type HumanDecisionResponse = {
+    action: HumanDecisionAction;
+    /**
+     * Actor
+     */
+    actor: string;
+    /**
+     * Comment
+     */
+    comment: string | null;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Diagnosis Report Id
+     */
+    diagnosis_report_id: string;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Idempotency Key
+     */
+    idempotency_key: string;
+};
+
+/**
+ * WorkflowAcceptedResponse
+ */
+export type WorkflowAcceptedResponse = {
+    /**
+     * Dispatched
+     */
+    dispatched: boolean;
+    status: WorkflowRunStatus;
+    /**
+     * Workflow Run Id
+     */
+    workflow_run_id: string;
+};
+
+/**
+ * WorkflowDetailResponse
+ */
+export type WorkflowDetailResponse = {
+    decision?: HumanDecisionResponse | null;
+    report?: DiagnosisReportResponse | null;
+    run: WorkflowRunResponse;
+};
+
+/**
+ * WorkflowEventListResponse
+ */
+export type WorkflowEventListResponse = {
+    /**
+     * Items
+     */
+    items: Array<WorkflowEventResponse>;
+    /**
+     * Last Sequence
+     */
+    last_sequence: number;
+};
+
+/**
+ * WorkflowEventResponse
+ */
+export type WorkflowEventResponse = {
+    event_type: WorkflowEventType;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Node Name
+     */
+    node_name: string | null;
+    /**
+     * Occurred At
+     */
+    occurred_at: string;
+    /**
+     * Payload
+     */
+    payload: {
+        [key: string]: unknown;
+    };
+    /**
+     * Sequence
+     */
+    sequence: number;
+    /**
+     * Status
+     */
+    status: string | null;
+    /**
+     * Workflow Run Id
+     */
+    workflow_run_id: string;
+};
+
+/**
+ * WorkflowEventType
+ */
+export type WorkflowEventType = 'workflow_queued' | 'workflow_started' | 'node_started' | 'node_completed' | 'node_failed' | 'tool_started' | 'tool_completed' | 'tool_failed' | 'human_input_required' | 'human_decision_received' | 'workflow_completed' | 'workflow_rejected' | 'workflow_failed';
+
+/**
+ * WorkflowRunResponse
+ */
+export type WorkflowRunResponse = {
+    /**
+     * Alert Id
+     */
+    alert_id: string;
+    /**
+     * Attempt
+     */
+    attempt: number;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Current Node
+     */
+    current_node: string | null;
+    /**
+     * Error Code
+     */
+    error_code: string | null;
+    /**
+     * Error Message
+     */
+    error_message: string | null;
+    /**
+     * Finished At
+     */
+    finished_at: string | null;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Started At
+     */
+    started_at: string | null;
+    status: WorkflowRunStatus;
+    /**
+     * Thread Id
+     */
+    thread_id: string;
+    /**
+     * Updated At
+     */
+    updated_at: string;
+    /**
+     * Workflow Version
+     */
+    workflow_version: string;
+};
+
+/**
+ * WorkflowRunStatus
+ */
+export type WorkflowRunStatus = 'queued' | 'running' | 'waiting_for_approval' | 'reanalyzing' | 'completed' | 'rejected' | 'failed';
+
+/**
+ * WorkflowStartCommand
+ */
+export type WorkflowStartCommand = {
+    /**
+     * Idempotency Key
+     */
+    idempotency_key: string;
 };
 
 export type ServiceMetadataGetData = {
@@ -316,6 +581,271 @@ export type GetAlertApiV1AlertsAlertIdGetResponses = {
 };
 
 export type GetAlertApiV1AlertsAlertIdGetResponse = GetAlertApiV1AlertsAlertIdGetResponses[keyof GetAlertApiV1AlertsAlertIdGetResponses];
+
+export type SubmitWorkflowDecisionApiV1AlertsAlertIdDecisionsPostData = {
+    body: HumanDecisionRequest;
+    path: {
+        /**
+         * Alert Id
+         */
+        alert_id: string;
+    };
+    query?: never;
+    url: '/api/v1/alerts/{alert_id}/decisions';
+};
+
+export type SubmitWorkflowDecisionApiV1AlertsAlertIdDecisionsPostErrors = {
+    /**
+     * Not Found
+     */
+    404: ApiErrorResponse;
+    /**
+     * Conflict
+     */
+    409: ApiErrorResponse;
+    /**
+     * Unprocessable Entity
+     */
+    422: ApiErrorResponse;
+    /**
+     * Service Unavailable
+     */
+    503: ApiErrorResponse;
+};
+
+export type SubmitWorkflowDecisionApiV1AlertsAlertIdDecisionsPostError = SubmitWorkflowDecisionApiV1AlertsAlertIdDecisionsPostErrors[keyof SubmitWorkflowDecisionApiV1AlertsAlertIdDecisionsPostErrors];
+
+export type SubmitWorkflowDecisionApiV1AlertsAlertIdDecisionsPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: WorkflowAcceptedResponse;
+};
+
+export type SubmitWorkflowDecisionApiV1AlertsAlertIdDecisionsPostResponse = SubmitWorkflowDecisionApiV1AlertsAlertIdDecisionsPostResponses[keyof SubmitWorkflowDecisionApiV1AlertsAlertIdDecisionsPostResponses];
+
+export type ListWorkflowEventsApiV1AlertsAlertIdEventsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Alert Id
+         */
+        alert_id: string;
+    };
+    query?: {
+        /**
+         * After
+         */
+        after?: number;
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/v1/alerts/{alert_id}/events';
+};
+
+export type ListWorkflowEventsApiV1AlertsAlertIdEventsGetErrors = {
+    /**
+     * Not Found
+     */
+    404: ApiErrorResponse;
+    /**
+     * Conflict
+     */
+    409: ApiErrorResponse;
+    /**
+     * Unprocessable Entity
+     */
+    422: ApiErrorResponse;
+    /**
+     * Service Unavailable
+     */
+    503: ApiErrorResponse;
+};
+
+export type ListWorkflowEventsApiV1AlertsAlertIdEventsGetError = ListWorkflowEventsApiV1AlertsAlertIdEventsGetErrors[keyof ListWorkflowEventsApiV1AlertsAlertIdEventsGetErrors];
+
+export type ListWorkflowEventsApiV1AlertsAlertIdEventsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkflowEventListResponse;
+};
+
+export type ListWorkflowEventsApiV1AlertsAlertIdEventsGetResponse = ListWorkflowEventsApiV1AlertsAlertIdEventsGetResponses[keyof ListWorkflowEventsApiV1AlertsAlertIdEventsGetResponses];
+
+export type RetryWorkflowApiV1AlertsAlertIdRetryPostData = {
+    body?: never;
+    path: {
+        /**
+         * Alert Id
+         */
+        alert_id: string;
+    };
+    query?: never;
+    url: '/api/v1/alerts/{alert_id}/retry';
+};
+
+export type RetryWorkflowApiV1AlertsAlertIdRetryPostErrors = {
+    /**
+     * Not Found
+     */
+    404: ApiErrorResponse;
+    /**
+     * Conflict
+     */
+    409: ApiErrorResponse;
+    /**
+     * Unprocessable Entity
+     */
+    422: ApiErrorResponse;
+    /**
+     * Service Unavailable
+     */
+    503: ApiErrorResponse;
+};
+
+export type RetryWorkflowApiV1AlertsAlertIdRetryPostError = RetryWorkflowApiV1AlertsAlertIdRetryPostErrors[keyof RetryWorkflowApiV1AlertsAlertIdRetryPostErrors];
+
+export type RetryWorkflowApiV1AlertsAlertIdRetryPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: WorkflowAcceptedResponse;
+};
+
+export type RetryWorkflowApiV1AlertsAlertIdRetryPostResponse = RetryWorkflowApiV1AlertsAlertIdRetryPostResponses[keyof RetryWorkflowApiV1AlertsAlertIdRetryPostResponses];
+
+export type StreamWorkflowEventsApiV1AlertsAlertIdStreamGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Last-Event-Id
+         */
+        'Last-Event-ID'?: string | null;
+    };
+    path: {
+        /**
+         * Alert Id
+         */
+        alert_id: string;
+    };
+    query?: never;
+    url: '/api/v1/alerts/{alert_id}/stream';
+};
+
+export type StreamWorkflowEventsApiV1AlertsAlertIdStreamGetErrors = {
+    /**
+     * Not Found
+     */
+    404: ApiErrorResponse;
+    /**
+     * Conflict
+     */
+    409: ApiErrorResponse;
+    /**
+     * Unprocessable Entity
+     */
+    422: ApiErrorResponse;
+    /**
+     * Service Unavailable
+     */
+    503: ApiErrorResponse;
+};
+
+export type StreamWorkflowEventsApiV1AlertsAlertIdStreamGetError = StreamWorkflowEventsApiV1AlertsAlertIdStreamGetErrors[keyof StreamWorkflowEventsApiV1AlertsAlertIdStreamGetErrors];
+
+export type StreamWorkflowEventsApiV1AlertsAlertIdStreamGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type GetWorkflowApiV1AlertsAlertIdWorkflowGetData = {
+    body?: never;
+    path: {
+        /**
+         * Alert Id
+         */
+        alert_id: string;
+    };
+    query?: never;
+    url: '/api/v1/alerts/{alert_id}/workflow';
+};
+
+export type GetWorkflowApiV1AlertsAlertIdWorkflowGetErrors = {
+    /**
+     * Not Found
+     */
+    404: ApiErrorResponse;
+    /**
+     * Conflict
+     */
+    409: ApiErrorResponse;
+    /**
+     * Unprocessable Entity
+     */
+    422: ApiErrorResponse;
+    /**
+     * Service Unavailable
+     */
+    503: ApiErrorResponse;
+};
+
+export type GetWorkflowApiV1AlertsAlertIdWorkflowGetError = GetWorkflowApiV1AlertsAlertIdWorkflowGetErrors[keyof GetWorkflowApiV1AlertsAlertIdWorkflowGetErrors];
+
+export type GetWorkflowApiV1AlertsAlertIdWorkflowGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: WorkflowDetailResponse;
+};
+
+export type GetWorkflowApiV1AlertsAlertIdWorkflowGetResponse = GetWorkflowApiV1AlertsAlertIdWorkflowGetResponses[keyof GetWorkflowApiV1AlertsAlertIdWorkflowGetResponses];
+
+export type StartWorkflowApiV1AlertsAlertIdWorkflowPostData = {
+    body: WorkflowStartCommand;
+    path: {
+        /**
+         * Alert Id
+         */
+        alert_id: string;
+    };
+    query?: never;
+    url: '/api/v1/alerts/{alert_id}/workflow';
+};
+
+export type StartWorkflowApiV1AlertsAlertIdWorkflowPostErrors = {
+    /**
+     * Not Found
+     */
+    404: ApiErrorResponse;
+    /**
+     * Conflict
+     */
+    409: ApiErrorResponse;
+    /**
+     * Unprocessable Entity
+     */
+    422: ApiErrorResponse;
+    /**
+     * Service Unavailable
+     */
+    503: ApiErrorResponse;
+};
+
+export type StartWorkflowApiV1AlertsAlertIdWorkflowPostError = StartWorkflowApiV1AlertsAlertIdWorkflowPostErrors[keyof StartWorkflowApiV1AlertsAlertIdWorkflowPostErrors];
+
+export type StartWorkflowApiV1AlertsAlertIdWorkflowPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: WorkflowAcceptedResponse;
+};
+
+export type StartWorkflowApiV1AlertsAlertIdWorkflowPostResponse = StartWorkflowApiV1AlertsAlertIdWorkflowPostResponses[keyof StartWorkflowApiV1AlertsAlertIdWorkflowPostResponses];
 
 export type LivenessApiV1HealthLiveGetData = {
     body?: never;

@@ -29,7 +29,7 @@
 
 V1.3A 已完成工作流状态契约、业务事实表、幂等约束、状态转换守卫和迁移。
 
-V1.3B 已完成单进程七节点 LangGraph、四个并发模拟工具、PostgreSQL Checkpointer、人工中断与批准/驳回/重新分析恢复，并通过跨运行时恢复和故障降级测试。下一步为 V1.3C 的工作流 API、Celery、Redis 事件广播与 SSE。
+V1.3B 已完成可恢复七节点 LangGraph。V1.3C 已完成工作流启动/查询/决策/重试 API、Celery Worker、Redis 短期执行锁与事件通知、SSE 补发，以及 Web 报告和人工确认面板。下一步为 V1.4 案例沉淀。
 
 - 实现告警创建、列表和详情接口。
 - 使用数据库唯一约束实现幂等。
@@ -47,10 +47,13 @@ V1.3B 已完成单进程七节点 LangGraph、四个并发模拟工具、Postgre
 
 ### 3.3 异步执行和页面事件
 
-- 引入 Celery 与 Redis。
-- API 投递启动/恢复任务，Worker 执行 LangGraph。
-- 节点事件写入 `workflow_events`。
-- 使用 SSE 推送页面状态。
+状态：V1.3C 已完成。
+
+- [x] 引入 Celery 与 Redis。
+- [x] API 投递启动/恢复任务，Worker 执行 LangGraph。
+- [x] 节点事件写入 `workflow_events`。
+- [x] 使用 PostgreSQL 补发与 Redis 唤醒组合的 SSE 推送页面状态。
+- [x] Web 支持启动、报告展示、批准、驳回、重新分析和失败重试。
 
 ### 3.4 案例沉淀
 

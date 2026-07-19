@@ -1,8 +1,11 @@
-from typing import Annotated, Literal
+from datetime import datetime
+from decimal import Decimal
+from typing import Annotated, Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
-from app.models.enums import HumanDecisionAction
+from app.models.enums import HumanDecisionAction, WorkflowEventType, WorkflowRunStatus
 
 NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 StableKey = Annotated[
@@ -119,3 +122,93 @@ class WorkflowResumePayload(HumanDecisionCommand):
         str,
         StringConstraints(strip_whitespace=True, min_length=1, max_length=128),
     ]
+
+
+class WorkflowStartCommand(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    idempotency_key: StableKey
+
+
+class HumanDecisionRequest(HumanDecisionCommand):
+    actor: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=128),
+    ] = "demo-user"
+
+
+class WorkflowRunResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    alert_id: UUID
+    thread_id: str
+    workflow_version: str
+    status: WorkflowRunStatus
+    current_node: str | None
+    attempt: int
+    error_code: str | None
+    error_message: str | None
+    started_at: datetime | None
+    finished_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class DiagnosisReportResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    workflow_run_id: UUID
+    version: int
+    schema_version: str
+    summary: str
+    root_causes: list[dict[str, Any]]
+    evidence: list[dict[str, Any]]
+    recommendations: list[dict[str, Any]]
+    confidence: Decimal
+    model_name: str
+    prompt_version: str
+    created_at: datetime
+
+
+class HumanDecisionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    diagnosis_report_id: UUID
+    idempotency_key: str
+    action: HumanDecisionAction
+    comment: str | None
+    actor: str
+    created_at: datetime
+
+
+class WorkflowDetailResponse(BaseModel):
+    run: WorkflowRunResponse
+    report: DiagnosisReportResponse | None = None
+    decision: HumanDecisionResponse | None = None
+
+
+class WorkflowAcceptedResponse(BaseModel):
+    workflow_run_id: UUID
+    status: WorkflowRunStatus
+    dispatched: bool
+
+
+class WorkflowEventResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    workflow_run_id: UUID
+    sequence: int
+    event_type: WorkflowEventType
+    node_name: str | None
+    status: str | None
+    payload: dict[str, Any]
+    occurred_at: datetime
+
+
+class WorkflowEventListResponse(BaseModel):
+    items: list[WorkflowEventResponse]
+    last_sequence: int

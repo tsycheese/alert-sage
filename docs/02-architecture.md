@@ -116,13 +116,15 @@ V1.3B 已按上图实现七个节点。`finalize` 只根据已持久化的人工
 
 ## 6. Web 与 API
 
-V1 计划接口如下；V1.2 已实现前三项，其余接口将在对应工作流增量中实现：
+V1.3C 已实现以下告警与工作流接口：
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
 | `POST` | `/api/v1/alerts` | 创建模拟告警 |
 | `GET` | `/api/v1/alerts` | 查询告警列表 |
 | `GET` | `/api/v1/alerts/{id}` | 查询告警详情 |
+| `POST` | `/api/v1/alerts/{id}/workflow` | 幂等启动异步诊断 |
+| `GET` | `/api/v1/alerts/{id}/workflow` | 查询最新运行、报告和决策 |
 | `GET` | `/api/v1/alerts/{id}/events` | 获取节点和工具事件 |
 | `GET` | `/api/v1/alerts/{id}/stream` | 订阅 SSE 状态事件 |
 | `POST` | `/api/v1/alerts/{id}/decisions` | 批准、驳回或重新分析 |
@@ -162,20 +164,24 @@ V1.1 的告警创建请求：
 
 ```json
 {
+  "idempotency_key": "decision-alert-001-v1",
   "action": "approve",
-  "comment": "确认是慢查询导致，可以按照建议处理"
+  "comment": "确认是慢查询导致，可以按照建议处理",
+  "actor": "demo-user"
 }
 ```
 
-SSE 用于服务器向浏览器单向推送状态，审批仍使用普通 HTTP 请求。需要双向高频交互前不引入 WebSocket。
+V1.3C 尚未接入认证，`actor` 是求职演示边界内的审计字段，不是可信身份。接入认证后必须由服务端从身份上下文生成，不能继续信任请求体。
 
-### 6.2 V1.2 Web 路由与服务端状态
+SSE 用于服务器向浏览器单向推送状态，审批仍使用普通 HTTP 请求。服务端先按 `Last-Event-ID` 从 PostgreSQL 补发，再用 Redis Pub/Sub 唤醒查询，并保留周期性数据库轮询；Redis 消息丢失不会丢审计事实。需要双向高频交互前不引入 WebSocket。
+
+### 6.2 V1.3C Web 路由与服务端状态
 
 | 路由 | 页面职责 |
 | --- | --- |
 | `/alerts` | 告警列表、过滤和分页；查询条件保存在 URL 中 |
 | `/alerts/new` | 创建模拟告警，处理成功、字段校验和幂等冲突 |
-| `/alerts/:alertId` | 展示业务事实、指标和原始 Payload，并诚实标记尚未接入的诊断流程 |
+| `/alerts/:alertId` | 展示业务事实、报告、建议、事件时间线、失败重试和人工确认 |
 | `*` | 应用级 404 |
 
 React Router 使用声明式路由，页面模块按路由懒加载。TanStack Query 只管理 API 服务端状态；筛选和分页使用 URL Search Params，表单临时值由 Ant Design Form 管理，不复制到全局状态。

@@ -1,7 +1,11 @@
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { AlertResponse, ApiErrorResponse } from "./api/generated";
+import type {
+  AlertResponse,
+  ApiErrorResponse,
+  WorkflowDetailResponse,
+} from "./api/generated";
 import { renderApp } from "./test/renderApp";
 
 const ALERT: AlertResponse = {
@@ -22,6 +26,39 @@ const ALERT: AlertResponse = {
   started_at: "2026-07-18T06:30:00Z",
   created_at: "2026-07-18T06:31:00Z",
   updated_at: "2026-07-18T06:31:00Z",
+};
+
+const WORKFLOW: WorkflowDetailResponse = {
+  run: {
+    id: "119f73e2-c928-70b2-b37a-10f876a72565",
+    alert_id: ALERT.id,
+    thread_id: "workflow-thread-001",
+    workflow_version: "1.0",
+    status: "waiting_for_approval",
+    current_node: "human_review",
+    attempt: 1,
+    error_code: null,
+    error_message: null,
+    started_at: "2026-07-18T06:31:10Z",
+    finished_at: null,
+    created_at: "2026-07-18T06:31:05Z",
+    updated_at: "2026-07-18T06:31:20Z",
+  },
+  report: {
+    id: "219f73e2-c928-70b2-b37a-10f876a72565",
+    workflow_run_id: "119f73e2-c928-70b2-b37a-10f876a72565",
+    version: 1,
+    schema_version: "1.0",
+    summary: "订单服务 CPU 升高与突发流量相关。",
+    root_causes: [],
+    evidence: [],
+    recommendations: [{ title: "检查慢查询并临时扩容" }],
+    confidence: "0.8600",
+    model_name: "mock-diagnostic-model",
+    prompt_version: "diagnosis-v1",
+    created_at: "2026-07-18T06:31:20Z",
+  },
+  decision: null,
 };
 
 function jsonResponse(
@@ -50,6 +87,10 @@ function requestMethod(input: RequestInfo | URL, init?: RequestInit): string {
 
 function healthResponse(): Response {
   return jsonResponse({ status: "ok", service: "Alert Sage API", version: "0.1.0" });
+}
+
+function workflowNotFoundResponse(): Response {
+  return jsonResponse(apiError("workflow_not_found", "not found"), 404);
 }
 
 describe("Alert Sage routes", () => {
@@ -112,6 +153,9 @@ describe("Alert Sage routes", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = requestUrl(input);
       if (url.includes("/health/live")) return healthResponse();
+      if (url.endsWith("/workflow") && requestMethod(input, init) === "GET") {
+        return workflowNotFoundResponse();
+      }
       if (requestMethod(input, init) === "POST") {
         return jsonResponse(ALERT, 201, { "X-Idempotent-Replay": "false" });
       }
@@ -135,6 +179,9 @@ describe("Alert Sage routes", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = requestUrl(input);
       if (url.includes("/health/live")) return healthResponse();
+      if (url.endsWith("/workflow") && requestMethod(input, init) === "GET") {
+        return workflowNotFoundResponse();
+      }
       if (requestMethod(input, init) === "POST") {
         return jsonResponse(
           apiError("alert_idempotency_conflict", "conflict", {
@@ -161,6 +208,57 @@ describe("Alert Sage routes", () => {
       await screen.findByRole("heading", { level: 1, name: "HighCPUUsage" }, { timeout: 5_000 }),
     ).toBeInTheDocument();
   }, 20_000);
+
+  it("renders a diagnosis report and submits a human decision", async () => {
+    class MockEventSource {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+
+      addEventListener(): void {}
+
+      removeEventListener(): void {}
+
+      close(): void {}
+    }
+
+    vi.stubGlobal("EventSource", MockEventSource);
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = requestUrl(input);
+      if (url.includes("/health/live")) return healthResponse();
+      if (url.endsWith("/events?after=0")) {
+        return jsonResponse({ items: [], last_sequence: 0 });
+      }
+      if (url.endsWith("/workflow")) return jsonResponse(WORKFLOW);
+      if (url.endsWith("/decisions") && requestMethod(input, init) === "POST") {
+        return jsonResponse(
+          {
+            workflow_run_id: WORKFLOW.run.id,
+            status: "waiting_for_approval",
+            dispatched: true,
+          },
+          202,
+        );
+      }
+      return jsonResponse(ALERT);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderApp(`/alerts/${ALERT.id}`);
+
+    expect(await screen.findByText("订单服务 CPU 升高与突发流量相关。"))
+      .toBeInTheDocument();
+    expect(screen.getByText("86%")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /批准建议/ }));
+
+    await waitFor(() => {
+      const decisionCall = fetchMock.mock.calls.find(([input]) =>
+        requestUrl(input).endsWith("/decisions"),
+      );
+      expect(decisionCall?.[1]?.method).toBe("POST");
+      expect(JSON.parse(String(decisionCall?.[1]?.body))).toMatchObject({
+        action: "approve",
+        actor: "demo-user",
+      });
+    });
+  });
 
   it("renders alert and route not-found states", async () => {
     vi.stubGlobal(

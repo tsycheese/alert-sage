@@ -32,13 +32,14 @@ Compose 会依次：
 
 1. 启动 PostgreSQL 和 Redis，并等待健康检查。
 2. 构建 API 镜像，执行 Alembic 迁移、初始化 LangGraph checkpoint 表并启动 Uvicorn。
-3. 构建 React 静态资源，通过 Nginx 提供页面并代理 `/api`。
+3. 启动 Celery Worker，使用 Redis Broker 调度工作流任务。
+4. 构建 React 静态资源，通过 Nginx 提供页面并代理 `/api`，SSE 路由关闭代理缓冲。
 
 检查状态：
 
 ```powershell
 docker compose ps
-docker compose logs api
+docker compose logs api worker
 ```
 
 删除容器但保留数据卷：
@@ -147,7 +148,7 @@ npm run build
 - Web 能展示 API 实时健康状态，以及告警列表、创建、详情、空数据、加载、错误、幂等冲突和 404 状态。
 - 列表筛选和分页状态写入 URL，可刷新和分享；创建成功后进入对应详情页。
 - 后端测试、前端测试、类型检查和构建全部通过。
-- Docker Compose 四个服务均处于运行或健康状态。
+- Docker Compose 五个服务均处于运行或健康状态。
 - `workflow_runs`、`workflow_events`、`tool_executions`、`diagnosis_reports`、`human_decisions` 已通过迁移创建。
 - 数据库能阻止同一告警存在多个活动运行，以及重复事件序号、工具执行和人工决策。
 - 工作流 State、诊断报告和人工决策输入通过严格 Pydantic Schema 校验。
@@ -155,12 +156,17 @@ npm run build
 - 指标、日志、CMDB 和知识四个模拟工具并发执行；单个工具超时会记录失败和告警，但可使用剩余证据继续诊断。
 - 批准和驳回进入对应终态；重新分析保留旧报告与人工反馈，并生成下一版本报告。
 - LangGraph checkpoint 表由官方 Checkpointer 管理，Alembic 只管理业务表且不会误删供应商表。
+- 工作流 API 返回 `202` 并由 Celery Worker 异步执行，不在 HTTP 请求中等待完整诊断。
+- Web 可启动诊断、查看报告与事件，并批准、驳回或携带反馈重新分析。
+- SSE 能通过 `Last-Event-ID` 从 PostgreSQL 补发事件，Redis 仅负责通知唤醒。
+- Broker 首次投递失败会持久化失败状态并支持重试。
 
 ## 7. 已知边界
 
-- V1.3B 尚未实现 Celery Worker、SSE、人工确认 API 和 Dify；当前工作流由后端应用服务在单进程中调用，详情页仍展示对应的诚实空状态。
-- Redis 在 V0 中仅作为已启动的基础设施，业务代码尚未使用。
-- `cases` 和 Outbox 尚未落地，将在案例闭环和异步投递分别实现时加入。
+- Dify、真实模型和真实运维工具尚未接入，当前使用确定性模拟适配器。
+- `cases` 尚未落地，批准当前只结束工作流，不伪造案例沉淀结果。
+- V1.3C 使用数据库事务提交后投递 Celery；首次投递失败可见且可重试，但尚未使用事务性 Outbox 消除进程在提交与投递之间退出的窗口，Outbox 计划在 V2 落地。
+- 尚未接入认证和 RBAC；`actor` 当前为演示审计字段。
 
 ## 8. V1.3A 专项验证
 
@@ -240,3 +246,26 @@ uv run python -m scripts.run_workflow resume `
 ```
 
 第一条命令返回 `waiting_for_approval` 后进程已经退出；第二条命令会创建新的运行时并从数据库恢复。该 CLI 是 V1.3B 的开发验收入口，不是对外 API。
+
+## 10. V1.3C 专项验证
+
+启动完整环境并检查 API、Worker 与 Web：
+
+```powershell
+docker compose up -d --build
+docker compose ps
+docker compose logs --tail=100 api worker
+```
+
+在 Web 详情页点击“启动诊断”，等待状态变为“等待人工确认”，查看报告和事件后选择批准、拒绝或填写反馈重新分析。API 对应入口为：
+
+```text
+POST /api/v1/alerts/{id}/workflow
+GET  /api/v1/alerts/{id}/workflow
+GET  /api/v1/alerts/{id}/events
+GET  /api/v1/alerts/{id}/stream
+POST /api/v1/alerts/{id}/decisions
+POST /api/v1/alerts/{id}/retry
+```
+
+专项自动化验证覆盖异步准备、人工决策、投递失败和重试；完整质量门禁为后端 33 项测试、前端 6 项测试、Ruff、TypeScript 类型检查及生产构建。容器级验收还应确认 Worker 注册三个 `alert_sage.workflow.*` 任务，并通过 Nginx SSE 路由按事件序号补发。

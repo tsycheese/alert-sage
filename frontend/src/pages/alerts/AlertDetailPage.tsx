@@ -6,7 +6,6 @@ import {
   Card,
   Col,
   Descriptions,
-  Empty,
   Result,
   Row,
   Skeleton,
@@ -20,6 +19,7 @@ import { Link, useParams } from "react-router";
 import { ApiClientError } from "../../api/http";
 import { AlertSeverityTag } from "../../features/alerts/components/AlertSeverityTag";
 import { AlertStatusTag } from "../../features/alerts/components/AlertStatusTag";
+import { WorkflowPanel } from "../../features/alerts/components/WorkflowPanel";
 import { alertDetailOptions } from "../../features/alerts/queryOptions";
 
 const { Paragraph, Text, Title } = Typography;
@@ -163,24 +163,14 @@ export function AlertDetailPage(): ReactElement {
         </Col>
         <Col xs={24} lg={12}>
           <Card
-            className="content-card detail-card workflow-placeholder"
+            className="content-card detail-card"
             title={
               <Space>
                 <ClockCircleOutlined /> 诊断工作流
               </Space>
             }
           >
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={
-                <div>
-                  <Text strong>诊断尚未启动</Text>
-                  <Paragraph type="secondary">
-                    V1.3 将在此展示节点时间线、工具证据、诊断报告和人工确认。
-                  </Paragraph>
-                </div>
-              }
-            />
+            <WorkflowPanel alertId={alert.id} />
           </Card>
         </Col>
       </Row>

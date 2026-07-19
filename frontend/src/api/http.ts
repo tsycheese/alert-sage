@@ -6,6 +6,11 @@ import type {
   AlertStatus,
   ApiErrorResponse,
   HealthResponse,
+  HumanDecisionRequest,
+  WorkflowAcceptedResponse,
+  WorkflowDetailResponse,
+  WorkflowEventListResponse,
+  WorkflowStartCommand,
 } from "./generated";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
@@ -114,4 +119,69 @@ export async function createAlert(command: AlertCreate): Promise<CreateAlertResu
     alert: data,
     replayed: response.headers.get("x-idempotent-replay") === "true",
   };
+}
+
+export async function getWorkflow(
+  alertId: string,
+  signal?: AbortSignal,
+): Promise<WorkflowDetailResponse> {
+  const { data } = await requestJson<WorkflowDetailResponse>(
+    `/api/v1/alerts/${encodeURIComponent(alertId)}/workflow`,
+    { signal },
+  );
+  return data;
+}
+
+export async function listWorkflowEvents(
+  alertId: string,
+  after = 0,
+  signal?: AbortSignal,
+): Promise<WorkflowEventListResponse> {
+  const { data } = await requestJson<WorkflowEventListResponse>(
+    `/api/v1/alerts/${encodeURIComponent(alertId)}/events?after=${after}`,
+    { signal },
+  );
+  return data;
+}
+
+export async function startWorkflow(
+  alertId: string,
+  command: WorkflowStartCommand,
+): Promise<WorkflowAcceptedResponse> {
+  const { data } = await requestJson<WorkflowAcceptedResponse>(
+    `/api/v1/alerts/${encodeURIComponent(alertId)}/workflow`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(command),
+    },
+  );
+  return data;
+}
+
+export async function submitWorkflowDecision(
+  alertId: string,
+  command: HumanDecisionRequest,
+): Promise<WorkflowAcceptedResponse> {
+  const { data } = await requestJson<WorkflowAcceptedResponse>(
+    `/api/v1/alerts/${encodeURIComponent(alertId)}/decisions`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(command),
+    },
+  );
+  return data;
+}
+
+export async function retryWorkflow(alertId: string): Promise<WorkflowAcceptedResponse> {
+  const { data } = await requestJson<WorkflowAcceptedResponse>(
+    `/api/v1/alerts/${encodeURIComponent(alertId)}/retry`,
+    { method: "POST" },
+  );
+  return data;
+}
+
+export function workflowStreamUrl(alertId: string): string {
+  return `${apiBaseUrl}/api/v1/alerts/${encodeURIComponent(alertId)}/stream`;
 }

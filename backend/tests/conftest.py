@@ -14,7 +14,7 @@ from sqlalchemy.schema import CreateSchema, DropSchema
 import app.models  # noqa: F401 - register all ORM models before create_all
 from app.core.config import get_settings
 from app.db.base import Base
-from app.db.session import get_db_session
+from app.db.session import get_db_session, get_session_factory
 from app.main import app
 
 if sys.platform == "win32":
@@ -84,6 +84,7 @@ async def api_client(
             yield session
 
     app.dependency_overrides[get_db_session] = override_db_session
+    app.dependency_overrides[get_session_factory] = lambda: test_session_factory
     try:
         async with AsyncClient(
             transport=ASGITransport(app=app),
@@ -92,3 +93,4 @@ async def api_client(
             yield client
     finally:
         app.dependency_overrides.pop(get_db_session, None)
+        app.dependency_overrides.pop(get_session_factory, None)
