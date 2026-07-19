@@ -62,7 +62,10 @@ async def test_conflicting_idempotency_key_returns_409(api_client: AsyncClient) 
     response = await api_client.post("/api/v1/alerts", json=conflicting)
 
     assert response.status_code == 409
-    assert response.json()["detail"]["code"] == "alert_idempotency_conflict"
+    error = response.json()["error"]
+    assert error["code"] == "alert_idempotency_conflict"
+    assert error["context"]["alert_id"]
+    assert error["context"]["href"] == response.headers["location"]
     assert (await api_client.get("/api/v1/alerts")).json()["total"] == 1
 
 
@@ -127,6 +130,9 @@ async def test_invalid_pagination_returns_422(api_client: AsyncClient) -> None:
     response = await api_client.get("/api/v1/alerts", params={"page": 0, "page_size": 101})
 
     assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+    fields = {issue["field"] for issue in response.json()["error"]["context"]["issues"]}
+    assert fields == {"query.page", "query.page_size"}
 
 
 @pytest.mark.asyncio
@@ -134,7 +140,7 @@ async def test_missing_alert_returns_404(api_client: AsyncClient) -> None:
     response = await api_client.get(f"/api/v1/alerts/{uuid4()}")
 
     assert response.status_code == 404
-    assert response.json()["detail"]["code"] == "alert_not_found"
+    assert response.json()["error"]["code"] == "alert_not_found"
 
 
 @pytest.mark.asyncio
@@ -156,3 +162,5 @@ async def test_invalid_alert_returns_422(
     response = await api_client.post("/api/v1/alerts", json=payload)
 
     assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+    assert response.json()["error"]["context"]["issues"][0]["field"] == field

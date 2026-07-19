@@ -116,7 +116,7 @@ flowchart TD
 
 ## 6. Web 与 API
 
-第一版接口：
+V1 计划接口如下；V1.2 已实现前三项，其余接口将在对应工作流增量中实现：
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
@@ -168,6 +168,36 @@ V1.1 的告警创建请求：
 ```
 
 SSE 用于服务器向浏览器单向推送状态，审批仍使用普通 HTTP 请求。需要双向高频交互前不引入 WebSocket。
+
+### 6.2 V1.2 Web 路由与服务端状态
+
+| 路由 | 页面职责 |
+| --- | --- |
+| `/alerts` | 告警列表、过滤和分页；查询条件保存在 URL 中 |
+| `/alerts/new` | 创建模拟告警，处理成功、字段校验和幂等冲突 |
+| `/alerts/:alertId` | 展示业务事实、指标和原始 Payload，并诚实标记尚未接入的诊断流程 |
+| `*` | 应用级 404 |
+
+React Router 使用声明式路由，页面模块按路由懒加载。TanStack Query 只管理 API 服务端状态；筛选和分页使用 URL Search Params，表单临时值由 Ant Design Form 管理，不复制到全局状态。
+
+### 6.3 API 错误与类型契约
+
+业务错误和请求校验错误统一为以下信封，前端不得依赖 FastAPI 默认的 `detail` 结构：
+
+```json
+{
+  "error": {
+    "code": "alert_idempotency_conflict",
+    "message": "An alert with this idempotency key already exists with different content",
+    "context": {
+      "alert_id": "019f73e2-c928-70b2-b37a-10f876a72565",
+      "href": "/api/v1/alerts/019f73e2-c928-70b2-b37a-10f876a72565"
+    }
+  }
+}
+```
+
+`context` 仅携带调用方可安全使用的结构化信息；`422` 在 `context.issues` 中返回字段、消息和错误类型，不回显敏感原始输入。后端导出 `openapi/openapi.json`，前端使用固定版本的生成器生成 `frontend/src/api/generated`。生成文件不手工编辑，契约变化时必须先重新导出 OpenAPI，再生成类型并运行前后端测试。
 
 ## 7. 建议目录结构
 

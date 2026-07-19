@@ -1,12 +1,14 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import ApiError
 from app.db.session import get_db_session
 from app.models.enums import AlertSeverity, AlertStatus
 from app.schemas.alert import AlertCreate, AlertListResponse, AlertResponse
+from app.schemas.error import ApiErrorResponse
 from app.services.alerts import (
     AlertIdempotencyConflictError,
     AlertNotFoundError,
@@ -15,6 +17,12 @@ from app.services.alerts import (
 
 router = APIRouter()
 DatabaseSession = Annotated[AsyncSession, Depends(get_db_session)]
+VALIDATION_RESPONSE = {
+    status.HTTP_422_UNPROCESSABLE_CONTENT: {
+        "model": ApiErrorResponse,
+        "description": "Request validation failed.",
+    }
+}
 
 
 @router.post(
@@ -22,10 +30,15 @@ DatabaseSession = Annotated[AsyncSession, Depends(get_db_session)]
     response_model=AlertResponse,
     status_code=status.HTTP_201_CREATED,
     responses={
-        status.HTTP_200_OK: {"description": "Idempotent replay; the existing alert is returned."},
-        status.HTTP_409_CONFLICT: {
-            "description": "The idempotency key was reused with different content."
+        status.HTTP_200_OK: {
+            "model": AlertResponse,
+            "description": "Idempotent replay; the existing alert is returned.",
         },
+        status.HTTP_409_CONFLICT: {
+            "model": ApiErrorResponse,
+            "description": "The idempotency key was reused with different content.",
+        },
+        **VALIDATION_RESPONSE,
     },
 )
 async def create_alert(
@@ -36,12 +49,16 @@ async def create_alert(
     try:
         result = await AlertService(session).create(command)
     except AlertIdempotencyConflictError as exc:
-        raise HTTPException(
+        href = f"/api/v1/alerts/{exc.alert_id}"
+        raise ApiError(
             status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "code": "alert_idempotency_conflict",
-                "message": "source and external_alert_id already exist with different content",
+            code="alert_idempotency_conflict",
+            message="source and external_alert_id already exist with different content",
+            context={
+                "alert_id": str(exc.alert_id),
+                "href": href,
             },
+            headers={"Location": href},
         ) from exc
 
     response.status_code = status.HTTP_201_CREATED if result.created else status.HTTP_200_OK
@@ -50,7 +67,7 @@ async def create_alert(
     return AlertResponse.model_validate(result.alert)
 
 
-@router.get("", response_model=AlertListResponse)
+@router.get("", response_model=AlertListResponse, responses=VALIDATION_RESPONSE)
 async def list_alerts(
     session: DatabaseSession,
     alert_status: Annotated[AlertStatus | None, Query(alias="status")] = None,
@@ -75,13 +92,25 @@ async def list_alerts(
     )
 
 
-@router.get("/{alert_id}", response_model=AlertResponse)
+@router.get(
+    "/{alert_id}",
+    response_model=AlertResponse,
+    responses={
+        status.HTTP_404_NOT_FOUND: {
+            "model": ApiErrorResponse,
+            "description": "Alert not found.",
+        },
+        **VALIDATION_RESPONSE,
+    },
+)
 async def get_alert(alert_id: UUID, session: DatabaseSession) -> AlertResponse:
     try:
         alert = await AlertService(session).get(alert_id)
     except AlertNotFoundError as exc:
-        raise HTTPException(
+        raise ApiError(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail={"code": "alert_not_found", "message": "alert does not exist"},
+            code="alert_not_found",
+            message="alert does not exist",
+            context={"alert_id": str(alert_id)},
         ) from exc
     return AlertResponse.model_validate(alert)

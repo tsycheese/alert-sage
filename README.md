@@ -6,7 +6,7 @@ Alert Sage 是一个面向运维场景的 AI 告警诊断助手，以“告警�
 
 ## 当前状态
 
-`V1.1 告警 API`：已建立 FastAPI、React、PostgreSQL、Redis、Alembic、测试与 Docker Compose 基础设施，并实现告警幂等创建、过滤分页和详情查询。告警页面与 LangGraph 工作流将在后续 V1 增量中实现。
+`V1.2 告警管理 Web`：已建立 FastAPI、React、PostgreSQL、Redis、Alembic、测试与 Docker Compose 基础设施，并实现告警幂等创建、过滤分页、详情查询，以及对应的列表、创建、详情和异常状态页面。前后端契约由 OpenAPI 生成 TypeScript 类型；LangGraph 工作流将在后续 V1 增量中实现。
 
 ## 技术栈
 
@@ -64,6 +64,7 @@ uv run ruff format --check .
 uv run pytest
 
 Set-Location ../frontend
+npm run api:types
 npm run typecheck
 npm test
 npm run build

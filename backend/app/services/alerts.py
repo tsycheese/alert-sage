@@ -16,7 +16,9 @@ class AlertNotFoundError(Exception):
 
 
 class AlertIdempotencyConflictError(Exception):
-    pass
+    def __init__(self, alert_id: UUID) -> None:
+        super().__init__("alert idempotency key conflicts with existing content")
+        self.alert_id = alert_id
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,5 +140,5 @@ class AlertService:
             and existing.payload == payload
         )
         if not same_content:
-            raise AlertIdempotencyConflictError
+            raise AlertIdempotencyConflictError(existing.id)
         return CreateAlertResult(alert=existing, created=False)

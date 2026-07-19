@@ -108,6 +108,18 @@ Invoke-RestMethod http://localhost:8000/api/v1/alerts
 
 ## 5. 前端开发
 
+后端 Schema 或路由响应发生变化后，先更新 OpenAPI 快照并重新生成前端类型：
+
+```powershell
+Set-Location backend
+uv run python -m scripts.export_openapi
+
+Set-Location ../frontend
+npm run api:types
+```
+
+`openapi/openapi.json` 和 `frontend/src/api/generated` 均提交到仓库，使 CI 和代码审查可以发现契约漂移。生成文件不得手工修改。
+
 ```powershell
 Set-Location frontend
 npm ci
@@ -130,12 +142,14 @@ npm run build
 - 告警支持创建、详情、过滤和分页查询。
 - `source + external_alert_id` 在顺序和并发请求下均保持幂等，冲突内容返回 `409`。
 - 请求字段、时区和枚举通过 Pydantic 校验，非法请求返回 `422`。
-- Web 能展示 API 实时健康状态。
+- API 的 `404`、`409` 和 `422` 使用统一错误信封，且 OpenAPI 能生成可用的前端类型。
+- Web 能展示 API 实时健康状态，以及告警列表、创建、详情、空数据、加载、错误、幂等冲突和 404 状态。
+- 列表筛选和分页状态写入 URL，可刷新和分享；创建成功后进入对应详情页。
 - 后端测试、前端测试、类型检查和构建全部通过。
 - Docker Compose 四个服务均处于运行或健康状态。
 
 ## 7. 已知边界
 
-- V1.1 尚未实现告警页面、Celery Worker、LangGraph、SSE 和 Dify。
+- V1.2 尚未实现 Celery Worker、LangGraph、SSE、人工确认和 Dify；详情页只展示对应的诚实空状态。
 - Redis 在 V0 中仅作为已启动的基础设施，业务代码尚未使用。
 - 当前迁移只落地 `alerts` 表，其余核心表将在对应功能实现时逐步加入。
