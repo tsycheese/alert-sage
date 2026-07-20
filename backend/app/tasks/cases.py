@@ -7,7 +7,7 @@ from redis.exceptions import LockError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import get_settings
-from app.integrations.knowledge.cases import MockCasePublisher
+from app.integrations.knowledge.factory import create_case_publisher
 from app.services.cases import CaseSyncService
 from app.tasks.celery_app import celery_app
 
@@ -30,7 +30,7 @@ async def _sync_case(case_id: UUID) -> None:
             return
         service = CaseSyncService(
             session_factory=session_factory,
-            publisher=MockCasePublisher(),
+            publisher=create_case_publisher(settings),
             timeout_seconds=settings.case_sync_timeout_seconds,
         )
         result = await service.execute(case_id)
@@ -40,7 +40,7 @@ async def _sync_case(case_id: UUID) -> None:
             with suppress(Exception):
                 result = await CaseSyncService(
                     session_factory=session_factory,
-                    publisher=MockCasePublisher(),
+                    publisher=create_case_publisher(settings),
                 ).get_result(case_id)
                 workflow_run_id = result.workflow_run_id
         if workflow_run_id is not None:

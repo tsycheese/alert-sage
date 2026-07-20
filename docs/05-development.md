@@ -18,6 +18,24 @@ Copy-Item .env.example .env
 
 `.env` 不得提交。变量使用 `ALERT_SAGE_` 前缀映射后端配置；容器内数据库地址由 Compose 注入，宿主机默认连接 `localhost:5432`。
 
+### 2.1 Dify Cloud
+
+离线开发保持 `ALERT_SAGE_KNOWLEDGE_PROVIDER=mock`。连接 Dify Cloud 时，在根目录 `.env` 中设置：
+
+```dotenv
+ALERT_SAGE_KNOWLEDGE_PROVIDER=dify
+ALERT_SAGE_DIFY_BASE_URL=https://api.dify.ai/v1
+ALERT_SAGE_DIFY_DATASET_ID=<知识库 UUID>
+ALERT_SAGE_DIFY_API_KEY=<Knowledge Service API Key>
+ALERT_SAGE_DIFY_HTTP_TIMEOUT_SECONDS=15
+ALERT_SAGE_DIFY_POLL_INTERVAL_SECONDS=2
+ALERT_SAGE_DIFY_MAX_RETRIES=2
+```
+
+API Key 只放在本地 `.env` 或部署平台的密钥系统中，不写入命令、日志、前端变量或 Git。Dify 空数据集不需要预先配置自定义元数据；需要先在 Dify 控制台为该数据集确认高质量索引使用的 Embedding 模型。API 与 Worker 都必须加载相同的 provider、dataset 和 key：前者用于页面检索，后者用于案例发布和诊断上下文采集。
+
+全空数据集在首个文档创建前可能因 Dify 尚未建立底层 Collection 而暂时无法检索，Alert Sage 会把该情况映射为脱敏 `503`，工作流则按单工具失败降级继续。批准第一条报告并完成案例索引后，检索恢复正常。
+
 后端集成测试读取 `ALERT_SAGE_TEST_DATABASE_URL`，缺省时复用开发数据库连接，但只在随机命名的临时 Schema 中建表。每项测试结束后会删除对应 Schema，不会清空开发业务表。
 
 ## 3. 完整容器环境
@@ -162,11 +180,13 @@ npm run build
 - Broker 首次投递失败会持久化失败状态并支持重试。
 - 人工批准会原子生成结构化案例；独立任务同步知识库，状态、尝试次数和外部文档 ID 可查询。
 - 案例同步失败不回滚工作流终态，Web 可重新投递，重复同步已成功案例不会重复发布。
+- 知识检索接口返回统一片段结构和可追溯来源，供应商超时、鉴权失败或异常响应统一映射为脱敏的 `503`。
+- Web `/knowledge` 支持加载、未检索、空结果、失败和命中结果状态，不直接持有 Dify 凭据。
 
 ## 7. 已知边界
 
-- Dify、真实模型和真实运维工具尚未接入，当前使用确定性模拟适配器。
-- Dify 发布与检索尚未接入；案例同步当前使用确定性 `MockCasePublisher`，真实供应商通过同一适配器协议替换。
+- 真实模型和真实运维工具尚未接入，当前使用确定性模拟适配器。
+- Dify 发布与检索代码已接入，但在真实 Dify Cloud 端到端验收完成前不视为 V2.1 完成；离线测试仍默认使用 Mock。
 - V1.3C 使用数据库事务提交后投递 Celery；首次投递失败可见且可重试，但尚未使用事务性 Outbox 消除进程在提交与投递之间退出的窗口，Outbox 计划在 V2 落地。
 - 尚未接入认证和 RBAC；`actor` 当前为演示审计字段。
 
@@ -270,7 +290,7 @@ POST /api/v1/alerts/{id}/decisions
 POST /api/v1/alerts/{id}/retry
 ```
 
-专项自动化验证覆盖异步准备、人工决策、投递失败和重试；V1.4 完整质量门禁为后端 39 项测试、前端 8 项测试、Ruff、TypeScript 类型检查及生产构建。容器级验收还应确认 Worker 注册三个 `alert_sage.workflow.*` 任务和一个 `alert_sage.case.sync` 任务，并通过 Nginx SSE 路由按事件序号补发。
+专项自动化验证覆盖异步准备、人工决策、投递失败和重试；V2.1 完整质量门禁为后端 47 项测试、前端 9 项测试、Ruff、TypeScript 类型检查及生产构建。容器级验收还应确认 Worker 注册三个 `alert_sage.workflow.*` 任务和一个 `alert_sage.case.sync` 任务，并通过 Nginx SSE 路由按事件序号补发。
 
 ## 11. V1.4 专项验证
 
@@ -295,3 +315,29 @@ Set-Location ../frontend
 npm test -- --run
 npm run build
 ```
+
+## 12. V2.1 Dify 专项验证
+
+确认 `.env` 已启用 Dify 后重新构建 API 和 Worker，使运行时依赖与环境变量生效：
+
+```powershell
+docker compose up -d --build api worker web
+docker compose logs --tail=100 api worker
+```
+
+验收链路：
+
+1. 创建一条包含唯一关键词的告警，启动诊断并批准报告。
+2. 等待案例 `knowledge_sync_status` 变为 `synced`，确认 `external_document_id` 不再是 `mock-doc-*`。
+3. 在 `/knowledge` 使用唯一关键词检索，确认命中文档、相关度和 `dify://` 来源。
+4. 创建同服务的第二条告警，确认诊断报告证据中出现 Dify 来源引用。
+5. 重试已同步案例，确认不创建同名重复文档。
+
+自动化合约测试使用 `httpx.MockTransport`，不会访问云端或读取真实密钥：
+
+```powershell
+Set-Location backend
+uv run pytest -q tests/test_dify_knowledge.py
+```
+
+2026-07-19 已使用 Dify Cloud 完成真实验收：空数据集首次只读检索按预期返回脱敏 `503`；批准首条报告后，案例一次同步为 `synced` 并获得真实文档 UUID。使用唯一关键词检索命中 4 个片段，首条结果指向同一文档并保留 `dify://` 来源；第二条告警的诊断报告生成 1 条 Dify 知识证据，之后以拒绝结束且未创建额外案例。对已同步案例调用重试接口返回 `dispatched=false`。浏览器实测页面无错误覆盖层和控制台错误，长文档内容不会造成横向溢出。

@@ -385,6 +385,63 @@ a {
   min-height: 420px;
 }
 
+.knowledge-page {
+  width: min(980px, 100%);
+  margin: 0 auto;
+}
+
+.knowledge-search-card {
+  margin-bottom: 18px;
+}
+
+.knowledge-search-card .ant-form-item {
+  margin-bottom: 10px;
+}
+
+.knowledge-result-state {
+  margin-top: 0;
+}
+
+.knowledge-results-card .ant-card-body {
+  min-height: 260px;
+  overflow: hidden;
+}
+
+.knowledge-empty-icon {
+  color: #94a3b8;
+  font-size: 64px;
+}
+
+.knowledge-result-item,
+.knowledge-result-item article {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.knowledge-result-meta {
+  max-width: 100%;
+  margin-bottom: 10px;
+}
+
+.knowledge-result-meta .ant-typography {
+  overflow-wrap: anywhere;
+}
+
+.knowledge-result-content.ant-typography {
+  margin-bottom: 12px;
+  color: #334155;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.knowledge-source {
+  overflow-wrap: anywhere;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+}
+
 @media (max-width: 768px) {
   .app-header {
     min-height: 64px;

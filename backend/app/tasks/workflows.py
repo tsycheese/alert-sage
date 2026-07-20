@@ -8,7 +8,9 @@ from redis.exceptions import LockError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import get_settings
+from app.integrations.knowledge.factory import create_knowledge_retriever
 from app.tasks.celery_app import celery_app
+from app.workflows.alert.adapters import default_context_providers
 from app.workflows.alert.checkpoint import open_alert_workflow_service
 from app.workflows.alert.service import AlertWorkflowService, WorkflowExecutionResult
 
@@ -33,6 +35,10 @@ async def _run_locked(workflow_run_id: UUID, operation: WorkflowOperation) -> ob
         async with open_alert_workflow_service(
             session_factory=session_factory,
             database_url=settings.database_url,
+            context_providers=default_context_providers(
+                knowledge_retriever=create_knowledge_retriever(settings)
+            ),
+            tool_timeout_seconds=settings.workflow_tool_timeout_seconds,
         ) as service:
             return await operation(service)
     finally:

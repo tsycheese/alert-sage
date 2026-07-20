@@ -14,6 +14,11 @@ const AlertCreatePage = lazy(() =>
 const AlertDetailPage = lazy(() =>
   import("./pages/alerts/AlertDetailPage").then((module) => ({ default: module.AlertDetailPage })),
 );
+const KnowledgeSearchPage = lazy(() =>
+  import("./pages/knowledge/KnowledgeSearchPage").then((module) => ({
+    default: module.KnowledgeSearchPage,
+  })),
+);
 const NotFoundPage = lazy(() =>
   import("./pages/NotFoundPage").then((module) => ({ default: module.NotFoundPage })),
 );
@@ -35,6 +40,7 @@ export function App(): ReactElement {
           <Route path="alerts" element={<AlertListPage />} />
           <Route path="alerts/new" element={<AlertCreatePage />} />
           <Route path="alerts/:alertId" element={<AlertDetailPage />} />
+          <Route path="knowledge" element={<KnowledgeSearchPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

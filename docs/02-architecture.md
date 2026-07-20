@@ -65,9 +65,11 @@ class KnowledgeRetriever:
 适配器实现：
 
 - `MockRetriever`：测试和离线开发使用。
-- `DifyRetriever`：下一阶段调用 Dify Knowledge Base API。
+- `DifyKnowledgeAdapter`：调用 Dify Knowledge Base API，同时实现检索与案例发布协议。
 
-案例写入知识库使用独立的 `CasePublisher` 协议。V1.4 已实现确定性的 `MockCasePublisher`，后续 `DifyCasePublisher` 只替换适配器，不改变案例事实表、工作流状态或重试 API。
+案例写入知识库使用独立的 `CasePublisher` 协议。V2.1 在保留确定性 `MockCasePublisher` 的同时实现 Dify 发布：以案例 UUID 生成稳定文档名，发布前按精确名称对账，避免重复任务创建重复文档；创建或更新后轮询索引状态，只有 `completed` 才把案例标记为 `synced`。Dify 的响应先通过 Pydantic Schema 校验，再转换为领域对象。
+
+空数据集无需预先创建自定义元数据。V2.1 将案例 ID、症状、根因、处置方案、标签和证据写入结构化 Markdown；来源通过数据集、文档和片段 ID 组合为稳定引用。后续只有在需要按服务、严重级别或时间做服务端过滤时，才引入 Dify 元数据字段和迁移脚本。
 
 后续实现 `PgVectorRetriever`，用同一评测集对比两种检索方案。LangGraph 节点只依赖 `KnowledgeRetriever`，不感知 Dify 的响应格式。
 
@@ -120,7 +122,7 @@ V1.4 在 `finalize` 持久化批准终态时，同一数据库事务内生成一
 
 ## 6. Web 与 API
 
-V1.4 已实现以下告警、工作流与案例接口：
+V2.1 已定义以下告警、工作流、案例与知识接口：
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
@@ -135,6 +137,7 @@ V1.4 已实现以下告警、工作流与案例接口：
 | `POST` | `/api/v1/alerts/{id}/retry` | 重试失败工作流 |
 | `GET` | `/api/v1/alerts/{id}/case` | 查询批准后生成的案例与知识同步状态 |
 | `POST` | `/api/v1/alerts/{id}/case/retry` | 重试失败的案例知识同步 |
+| `POST` | `/api/v1/knowledge/search` | 使用统一协议检索知识片段并返回来源 |
 
 ### 6.1 告警接入契约
 
@@ -181,13 +184,14 @@ V1.3C 尚未接入认证，`actor` 是求职演示边界内的审计字段，不
 
 SSE 用于服务器向浏览器单向推送状态，审批仍使用普通 HTTP 请求。服务端先按 `Last-Event-ID` 从 PostgreSQL 补发，再用 Redis Pub/Sub 唤醒查询，并保留周期性数据库轮询；Redis 消息丢失不会丢审计事实。需要双向高频交互前不引入 WebSocket。
 
-### 6.2 V1.4 Web 路由与服务端状态
+### 6.2 V2.1 Web 路由与服务端状态
 
 | 路由 | 页面职责 |
 | --- | --- |
 | `/alerts` | 告警列表、过滤和分页；查询条件保存在 URL 中 |
 | `/alerts/new` | 创建模拟告警，处理成功、字段校验和幂等冲突 |
 | `/alerts/:alertId` | 展示业务事实、报告、建议、事件时间线、人工确认、结构化案例和同步重试 |
+| `/knowledge` | 输入问题并展示标准化知识片段、相关度、供应商和来源引用 |
 | `*` | 应用级 404 |
 
 React Router 使用声明式路由，页面模块按路由懒加载。TanStack Query 只管理 API 服务端状态；筛选和分页使用 URL Search Params，表单临时值由 Ant Design Form 管理，不复制到全局状态。

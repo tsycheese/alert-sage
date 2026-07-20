@@ -384,6 +384,78 @@ export type HumanDecisionResponse = {
 };
 
 /**
+ * KnowledgeChunkResponse
+ */
+export type KnowledgeChunkResponse = {
+    /**
+     * Content
+     */
+    content: string;
+    /**
+     * Document Id
+     */
+    document_id: string;
+    /**
+     * Document Name
+     */
+    document_name: string;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Metadata
+     */
+    metadata: {
+        [key: string]: unknown;
+    };
+    /**
+     * Score
+     */
+    score: number;
+    /**
+     * Source
+     */
+    source: string;
+};
+
+/**
+ * KnowledgeSearchRequest
+ */
+export type KnowledgeSearchRequest = {
+    /**
+     * Query
+     */
+    query: string;
+    /**
+     * Score Threshold
+     */
+    score_threshold?: number | null;
+    /**
+     * Top K
+     */
+    top_k?: number;
+};
+
+/**
+ * KnowledgeSearchResponse
+ */
+export type KnowledgeSearchResponse = {
+    /**
+     * Items
+     */
+    items: Array<KnowledgeChunkResponse>;
+    /**
+     * Provider
+     */
+    provider: 'mock' | 'dify';
+    /**
+     * Query
+     */
+    query: string;
+};
+
+/**
  * KnowledgeSyncStatus
  */
 export type KnowledgeSyncStatus = 'pending' | 'syncing' | 'synced' | 'failed';
@@ -1051,3 +1123,32 @@ export type ReadinessApiV1HealthReadyGetResponses = {
 };
 
 export type ReadinessApiV1HealthReadyGetResponse = ReadinessApiV1HealthReadyGetResponses[keyof ReadinessApiV1HealthReadyGetResponses];
+
+export type SearchKnowledgeApiV1KnowledgeSearchPostData = {
+    body: KnowledgeSearchRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/knowledge/search';
+};
+
+export type SearchKnowledgeApiV1KnowledgeSearchPostErrors = {
+    /**
+     * Unprocessable Entity
+     */
+    422: ApiErrorResponse;
+    /**
+     * Service Unavailable
+     */
+    503: ApiErrorResponse;
+};
+
+export type SearchKnowledgeApiV1KnowledgeSearchPostError = SearchKnowledgeApiV1KnowledgeSearchPostErrors[keyof SearchKnowledgeApiV1KnowledgeSearchPostErrors];
+
+export type SearchKnowledgeApiV1KnowledgeSearchPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: KnowledgeSearchResponse;
+};
+
+export type SearchKnowledgeApiV1KnowledgeSearchPostResponse = SearchKnowledgeApiV1KnowledgeSearchPostResponses[keyof SearchKnowledgeApiV1KnowledgeSearchPostResponses];

@@ -6,6 +6,7 @@ from typing import Protocol
 
 from pydantic import JsonValue
 
+from app.integrations.knowledge.retrieval import KnowledgeRetriever
 from app.schemas.workflow import (
     DiagnosisDraftPayload,
     EvidenceItem,
@@ -106,12 +107,58 @@ class MockKnowledgeProvider:
         )
 
 
-def default_context_providers() -> tuple[ContextProvider, ...]:
+class KnowledgeContextProvider:
+    name = "knowledge"
+
+    def __init__(self, retriever: KnowledgeRetriever, *, top_k: int = 3) -> None:
+        self.retriever = retriever
+        self.top_k = top_k
+
+    async def collect(self, alert: Mapping[str, JsonValue]) -> ContextProviderResult:
+        payload = alert.get("payload")
+        payload_values = payload if isinstance(payload, Mapping) else {}
+        query = " ".join(
+            value
+            for value in (
+                str(alert.get("service", "")).strip(),
+                str(alert.get("alert_name", "")).strip(),
+                str(payload_values.get("summary", "")).strip(),
+            )
+            if value
+        )[:250]
+        chunks = await self.retriever.retrieve(query, top_k=self.top_k)
+        return ContextProviderResult(
+            data={
+                "query": query,
+                "matches": [
+                    {
+                        "document_id": chunk.document_id,
+                        "document_name": chunk.document_name,
+                        "content": chunk.content,
+                        "score": chunk.score,
+                        "source": chunk.source,
+                    }
+                    for chunk in chunks
+                ],
+            },
+            source_refs=[chunk.source for chunk in chunks],
+        )
+
+
+def default_context_providers(
+    *,
+    knowledge_retriever: KnowledgeRetriever | None = None,
+) -> tuple[ContextProvider, ...]:
+    knowledge_provider: ContextProvider = (
+        KnowledgeContextProvider(knowledge_retriever)
+        if knowledge_retriever is not None
+        else MockKnowledgeProvider()
+    )
     return (
         MockMetricsProvider(),
         MockLogsProvider(),
         MockCmdbProvider(),
-        MockKnowledgeProvider(),
+        knowledge_provider,
     )
 
 

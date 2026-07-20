@@ -6,7 +6,7 @@ Alert Sage 是一个面向运维场景的 AI 告警诊断助手，以“告警�
 
 ## 当前状态
 
-`V1.4 案例沉淀闭环`：人工批准后会在同一业务事务中生成结构化案例，再由独立 Celery 任务通过可替换的知识库适配器异步同步。案例与同步状态写入 PostgreSQL，可在 Web 查询，失败可人工重试；当前使用确定性模拟知识库，下一阶段接入 Dify。
+`V2.1 Dify 知识闭环`：人工批准后会在同一业务事务中生成结构化案例，再由独立 Celery 任务通过可替换适配器发布到 Dify Knowledge Base，并等待异步索引完成。诊断工作流和 Web 知识检索均使用统一的 `KnowledgeRetriever`，保留来源引用；Mock 模式继续支持离线开发。真实 Dify Cloud 已完成“案例发布 → 页面检索 → 下一条诊断引用”的端到端验收。
 
 ## 技术栈
 
@@ -14,7 +14,8 @@ Alert Sage 是一个面向运维场景的 AI 告警诊断助手，以“告警�
 - 前端：React、TypeScript、Vite、Ant Design、TanStack Query
 - 数据：PostgreSQL、Redis
 - 交付：Docker Compose、pytest、Vitest
-- 后续：Dify、Prometheus、Grafana、事务性 Outbox
+- 外部知识：Dify Knowledge Base API（可替换）
+- 后续：Prometheus、Grafana、事务性 Outbox、RAG 评测
 
 ## Docker 一键启动
 

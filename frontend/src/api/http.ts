@@ -9,6 +9,8 @@ import type {
   CaseSyncAcceptedResponse,
   HealthResponse,
   HumanDecisionRequest,
+  KnowledgeSearchRequest,
+  KnowledgeSearchResponse,
   WorkflowAcceptedResponse,
   WorkflowDetailResponse,
   WorkflowEventListResponse,
@@ -197,6 +199,17 @@ export async function retryCaseSync(alertId: string): Promise<CaseSyncAcceptedRe
     `/api/v1/alerts/${encodeURIComponent(alertId)}/case/retry`,
     { method: "POST" },
   );
+  return data;
+}
+
+export async function searchKnowledge(
+  command: KnowledgeSearchRequest,
+): Promise<KnowledgeSearchResponse> {
+  const { data } = await requestJson<KnowledgeSearchResponse>("/api/v1/knowledge/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(command),
+  });
   return data;
 }
 

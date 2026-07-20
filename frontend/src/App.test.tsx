@@ -5,6 +5,7 @@ import type {
   AlertResponse,
   ApiErrorResponse,
   CaseResponse,
+  KnowledgeSearchResponse,
   WorkflowDetailResponse,
 } from "./api/generated";
 import { renderApp } from "./test/renderApp";
@@ -97,6 +98,22 @@ const PENDING_CASE: CaseResponse = {
   knowledge_sync_attempt: 0,
   sync_error_code: null,
   sync_error_message: null,
+};
+
+const KNOWLEDGE_RESULTS: KnowledgeSearchResponse = {
+  query: "订单服务 CPU",
+  provider: "dify",
+  items: [
+    {
+      id: "segment-001",
+      document_id: "document-001",
+      document_name: "alert-sage-case-order-service.md",
+      content: "检查慢查询和线程池饱和度，必要时回滚异常发布。",
+      score: 0.91,
+      source: "dify://datasets/dataset-001/documents/document-001/segments/segment-001",
+      metadata: {},
+    },
+  ],
 };
 
 function jsonResponse(
@@ -361,6 +378,37 @@ describe("Alert Sage routes", () => {
         requestUrl(input).endsWith("/case/retry"),
       );
       expect(retryCall?.[1]?.method).toBe("POST");
+    });
+  });
+
+  it("searches the knowledge base and renders traceable sources", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = requestUrl(input);
+      if (url.includes("/health/live")) return healthResponse();
+      if (url.endsWith("/knowledge/search") && requestMethod(input, init) === "POST") {
+        return jsonResponse(KNOWLEDGE_RESULTS);
+      }
+      return jsonResponse(apiError("not_found", "not found"), 404);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderApp("/knowledge");
+
+    fireEvent.change(await screen.findByRole("textbox", { name: "检索问题" }), {
+      target: { value: "订单服务 CPU" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /检索/ }));
+
+    expect(await screen.findByText("alert-sage-case-order-service.md")).toBeInTheDocument();
+    expect(screen.getByText("相关度 91.0%")).toBeInTheDocument();
+    expect(screen.getByText(KNOWLEDGE_RESULTS.items[0].source)).toBeInTheDocument();
+    await waitFor(() => {
+      const searchCall = fetchMock.mock.calls.find(([input]) =>
+        requestUrl(input).endsWith("/knowledge/search"),
+      );
+      expect(JSON.parse(String(searchCall?.[1]?.body))).toEqual({
+        query: "订单服务 CPU",
+        top_k: 5,
+      });
     });
   });
 
