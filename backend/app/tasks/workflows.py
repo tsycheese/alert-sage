@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.config import get_settings
 from app.integrations.knowledge.factory import create_knowledge_retriever
+from app.integrations.llm.factory import create_diagnostic_model
 from app.tasks.celery_app import celery_app
 from app.workflows.alert.adapters import default_context_providers
 from app.workflows.alert.checkpoint import open_alert_workflow_service
@@ -38,6 +39,7 @@ async def _run_locked(workflow_run_id: UUID, operation: WorkflowOperation) -> ob
             context_providers=default_context_providers(
                 knowledge_retriever=create_knowledge_retriever(settings)
             ),
+            diagnostic_model=create_diagnostic_model(settings),
             tool_timeout_seconds=settings.workflow_tool_timeout_seconds,
         ) as service:
             return await operation(service)

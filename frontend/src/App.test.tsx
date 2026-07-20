@@ -301,6 +301,7 @@ describe("Alert Sage routes", () => {
     expect(await screen.findByText("订单服务 CPU 升高与突发流量相关。"))
       .toBeInTheDocument();
     expect(screen.getByText("86%")).toBeInTheDocument();
+    expect(screen.getByText("diagnosis-v1")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /批准建议/ }));
 
     await waitFor(() => {

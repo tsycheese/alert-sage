@@ -6,7 +6,7 @@ Alert Sage 是一个面向运维场景的 AI 告警诊断助手，以“告警�
 
 ## 当前状态
 
-`V2.1 Dify 知识闭环`：人工批准后会在同一业务事务中生成结构化案例，再由独立 Celery 任务通过可替换适配器发布到 Dify Knowledge Base，并等待异步索引完成。诊断工作流和 Web 知识检索均使用统一的 `KnowledgeRetriever`，保留来源引用；Mock 模式继续支持离线开发。真实 Dify Cloud 已完成“案例发布 → 页面检索 → 下一条诊断引用”的端到端验收。
+`V2.2 DeepSeek 真实诊断闭环`：LangGraph 通过可替换的 `DiagnosticModel` 调用 DeepSeek JSON Mode，生成经过严格 Schema 校验、证据引用校验和版本标记的诊断与建议；人工批准后生成结构化案例，并由独立 Celery 任务发布到 Dify。Mock 模式继续支持离线开发。真实 Cloud 已完成“Dify 检索 → DeepSeek 诊断 → Web 人工批准 → 案例同步 → Dify 回检”的端到端验收。
 
 ## 技术栈
 
@@ -15,6 +15,7 @@ Alert Sage 是一个面向运维场景的 AI 告警诊断助手，以“告警�
 - 数据：PostgreSQL、Redis
 - 交付：Docker Compose、pytest、Vitest
 - 外部知识：Dify Knowledge Base API（可替换）
+- 诊断模型：DeepSeek OpenAI-compatible API（可替换）
 - 后续：Prometheus、Grafana、事务性 Outbox、RAG 评测
 
 ## Docker 一键启动
@@ -26,10 +27,10 @@ docker compose up --build
 
 启动后访问：
 
-- Web：http://localhost:5173
-- API 文档：http://localhost:8000/docs
-- API 健康检查：http://localhost:8000/api/v1/health/live
-- API 就绪检查：http://localhost:8000/api/v1/health/ready
+- Web：http://localhost:15173
+- API 文档：http://localhost:18000/docs
+- API 健康检查：http://localhost:18000/api/v1/health/live
+- API 就绪检查：http://localhost:18000/api/v1/health/ready
 
 停止服务：
 

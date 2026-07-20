@@ -233,6 +233,7 @@ export function WorkflowPanel({ alertId }: WorkflowPanelProps): ReactElement {
               {(Number(report.confidence) * 100).toFixed(0)}%
             </Descriptions.Item>
             <Descriptions.Item label="模型">{report.model_name}</Descriptions.Item>
+            <Descriptions.Item label="Prompt 版本">{report.prompt_version}</Descriptions.Item>
           </Descriptions>
           <Text strong>建议操作</Text>
           <ul className="recommendation-list">

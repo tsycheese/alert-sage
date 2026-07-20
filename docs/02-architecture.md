@@ -73,6 +73,14 @@ class KnowledgeRetriever:
 
 后续实现 `PgVectorRetriever`，用同一评测集对比两种检索方案。LangGraph 节点只依赖 `KnowledgeRetriever`，不感知 Dify 的响应格式。
 
+### 3.4 DeepSeek 的定位
+
+DeepSeek 只实现可替换的 `DiagnosticModel` 协议，不负责工作流编排、证据采集、权限、状态流转或工具执行。离线环境由 `MockDiagnosticModel` 提供确定性结果；真实环境由通用 OpenAI-compatible 适配器调用 DeepSeek，领域节点不依赖供应商响应格式。
+
+V2.2 将诊断与建议拆为两次 JSON Mode 调用。每次响应先校验供应商信封，再使用严格 Pydantic Schema 校验业务结构；诊断根因引用还必须属于 Alert Sage 生成的允许证据 ID。Schema 或引用失败时最多进行一次输出修复，网络错误、`429` 和 `5xx` 使用独立的有限重试，鉴权和参数错误不重试。
+
+模型只生成摘要、根因和建议。报告证据、来源、模型名和 Prompt 版本由可信应用代码补齐；告警 payload、人工反馈和证据内容有明确长度上限。所有外部内容都按不可信数据包裹，密钥和供应商响应正文不得进入日志或业务错误。
+
 ## 4. 总体架构
 
 ```mermaid
@@ -237,8 +245,8 @@ alert-sage/
 │  │  │  └─ service.py           # 业务事务、事件和恢复编排
 │  │  ├─ tools/                  # 日志、指标、CMDB、案例工具
 │  │  ├─ integrations/
-│  │  │  ├─ dify/                # Dify 检索适配器
-│  │  │  └─ llm/                 # 模型适配器
+│  │  │  ├─ knowledge/           # Dify/Mock 知识检索与案例发布适配器
+│  │  │  └─ llm/                 # OpenAI-compatible/Mock 诊断模型适配器
 │  │  ├─ tasks/                  # Celery 任务与 Worker 入口
 │  │  └─ observability/          # 指标、追踪和审计辅助代码
 │  ├─ migrations/                # Alembic 迁移
@@ -290,6 +298,8 @@ API 和 Celery Worker 共享 `backend/app` 中的领域与工作流代码，只�
 - API 先提交数据库事务，再投递任务；投递失败应记录并允许补偿重试。
 - 每次工具调用使用稳定的 `idempotency_key`。
 - LLM 输出必须经过结构化 Schema 校验，失败时允许修复或重试。
+- LLM 根因只能引用应用生成的证据 ID；模型不得创建来源或覆盖模型/Prompt 版本元数据。
+- 外部告警、反馈和检索片段在进入模型前必须按长度预算裁剪，并作为不可信数据隔离。
 - 重试仅覆盖可恢复错误，不对参数错误和权限错误盲目重试。
 - 人工决策只能作用于 `waiting_for_approval` 的运行。
 - 最终报告、人工决策和案例写入均保留版本与审计信息。

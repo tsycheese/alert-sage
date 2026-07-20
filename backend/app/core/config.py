@@ -35,11 +35,31 @@ class Settings(BaseSettings):
     dify_http_timeout_seconds: float = Field(default=15.0, gt=0)
     dify_poll_interval_seconds: float = Field(default=2.0, gt=0)
     dify_max_retries: int = Field(default=2, ge=0, le=5)
+    diagnostic_model_provider: Literal["mock", "deepseek"] = "mock"
+    diagnostic_model_base_url: str = "https://api.deepseek.com"
+    diagnostic_model_api_key: SecretStr | None = None
+    diagnostic_model_name: str = Field(default="deepseek-v4-flash", min_length=1, max_length=128)
+    diagnostic_model_timeout_seconds: float = Field(default=60.0, gt=0)
+    diagnostic_model_max_retries: int = Field(default=2, ge=0, le=5)
+    diagnostic_model_max_tokens: int = Field(default=3000, ge=512, le=32_768)
+    diagnostic_model_temperature: float = Field(default=0.1, ge=0, le=2)
+    diagnostic_model_thinking_enabled: bool = False
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 
     @model_validator(mode="after")
-    def validate_knowledge_provider(self) -> "Settings":
+    def validate_integrations(self) -> "Settings":
         self.dify_base_url = self.dify_base_url.rstrip("/")
+        self.diagnostic_model_base_url = self.diagnostic_model_base_url.rstrip("/")
+        if self.diagnostic_model_provider == "deepseek":
+            api_key = (
+                self.diagnostic_model_api_key.get_secret_value().strip()
+                if self.diagnostic_model_api_key
+                else ""
+            )
+            if not api_key:
+                raise ValueError(
+                    "DeepSeek diagnostic model requires ALERT_SAGE_DIAGNOSTIC_MODEL_API_KEY"
+                )
         if self.knowledge_provider != "dify":
             return self
         api_key = self.dify_api_key.get_secret_value().strip() if self.dify_api_key else ""

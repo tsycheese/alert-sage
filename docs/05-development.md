@@ -16,7 +16,7 @@
 Copy-Item .env.example .env
 ```
 
-`.env` 不得提交。变量使用 `ALERT_SAGE_` 前缀映射后端配置；容器内数据库地址由 Compose 注入，宿主机默认连接 `localhost:5432`。
+`.env` 不得提交。变量使用 `ALERT_SAGE_` 前缀映射后端配置；容器内数据库地址由 Compose 注入，仓库示例在宿主机使用 PostgreSQL `15432`、Redis `16379`、API `18000` 和 Web `15173`，避免与常用默认端口冲突。
 
 ### 2.1 Dify Cloud
 
@@ -35,6 +35,26 @@ ALERT_SAGE_DIFY_MAX_RETRIES=2
 API Key 只放在本地 `.env` 或部署平台的密钥系统中，不写入命令、日志、前端变量或 Git。Dify 空数据集不需要预先配置自定义元数据；需要先在 Dify 控制台为该数据集确认高质量索引使用的 Embedding 模型。API 与 Worker 都必须加载相同的 provider、dataset 和 key：前者用于页面检索，后者用于案例发布和诊断上下文采集。
 
 全空数据集在首个文档创建前可能因 Dify 尚未建立底层 Collection 而暂时无法检索，Alert Sage 会把该情况映射为脱敏 `503`，工作流则按单工具失败降级继续。批准第一条报告并完成案例索引后，检索恢复正常。
+
+### 2.2 DeepSeek 诊断模型
+
+离线开发保持 `ALERT_SAGE_DIAGNOSTIC_MODEL_PROVIDER=mock`。启用真实诊断时，在根目录 `.env` 中设置：
+
+```dotenv
+ALERT_SAGE_DIAGNOSTIC_MODEL_PROVIDER=deepseek
+ALERT_SAGE_DIAGNOSTIC_MODEL_BASE_URL=https://api.deepseek.com
+ALERT_SAGE_DIAGNOSTIC_MODEL_API_KEY=<DeepSeek API Key>
+ALERT_SAGE_DIAGNOSTIC_MODEL_NAME=deepseek-v4-flash
+ALERT_SAGE_DIAGNOSTIC_MODEL_TIMEOUT_SECONDS=60
+ALERT_SAGE_DIAGNOSTIC_MODEL_MAX_RETRIES=2
+ALERT_SAGE_DIAGNOSTIC_MODEL_MAX_TOKENS=3000
+ALERT_SAGE_DIAGNOSTIC_MODEL_TEMPERATURE=0.1
+ALERT_SAGE_DIAGNOSTIC_MODEL_THINKING_ENABLED=false
+```
+
+`.env.example` 与实际模板字段保持一致，但 provider 默认使用 `mock` 且 API Key 留空，避免新环境意外产生云端调用和费用。API 与 Worker 接收相同配置，目前只有 Worker 发起诊断调用。完整诊断通常包含诊断与建议两次模型请求；输出无效时可能额外产生一次修复请求。
+
+启用真实模型意味着选定告警字段、分类结果、上下文证据、Dify 检索片段和可选人工反馈会发送到 DeepSeek。当前适合使用合成演示数据；接入真实生产数据前应完成字段脱敏、数据分级和供应商合规评审。
 
 后端集成测试读取 `ALERT_SAGE_TEST_DATABASE_URL`，缺省时复用开发数据库连接，但只在随机命名的临时 Schema 中建表。每项测试结束后会删除对应 Schema，不会清空开发业务表。
 
@@ -185,8 +205,9 @@ npm run build
 
 ## 7. 已知边界
 
-- 真实模型和真实运维工具尚未接入，当前使用确定性模拟适配器。
-- Dify 发布与检索代码已接入，但在真实 Dify Cloud 端到端验收完成前不视为 V2.1 完成；离线测试仍默认使用 Mock。
+- DeepSeek 与 Dify 已完成真实 Cloud 验收，离线测试仍默认使用 Mock；Prometheus、日志和 CMDB 目前仍为确定性模拟适配器。
+- 当前只记录报告级模型名与 Prompt 版本，尚未持久化 token 用量、供应商 request ID、单次调用延迟和费用。
+- 真实模型调用尚未实现熔断与全局预算；当前只有超时、有限重试、输出修复和输入长度预算。
 - V1.3C 使用数据库事务提交后投递 Celery；首次投递失败可见且可重试，但尚未使用事务性 Outbox 消除进程在提交与投递之间退出的窗口，Outbox 计划在 V2 落地。
 - 尚未接入认证和 RBAC；`actor` 当前为演示审计字段。
 
@@ -207,7 +228,7 @@ uv run alembic check
 
 ```powershell
 $env:ALERT_SAGE_TEST_DATABASE_URL = `
-  "postgresql+psycopg://alert_sage:alert_sage@localhost:5432/alert_sage"
+  "postgresql+psycopg://alert_sage:alert_sage@localhost:15432/alert_sage"
 
 uv run pytest -q tests/test_workflow_foundation.py
 uv run pytest -q
@@ -237,7 +258,7 @@ Set-Location backend
 uv sync --python 3.12
 
 $env:ALERT_SAGE_TEST_DATABASE_URL = `
-  "postgresql+psycopg://alert_sage:alert_sage@localhost:5432/alert_sage"
+  "postgresql+psycopg://alert_sage:alert_sage@localhost:15432/alert_sage"
 
 uv run pytest -q tests/test_alert_workflow_runtime.py
 uv run pytest -q
@@ -290,7 +311,7 @@ POST /api/v1/alerts/{id}/decisions
 POST /api/v1/alerts/{id}/retry
 ```
 
-专项自动化验证覆盖异步准备、人工决策、投递失败和重试；V2.1 完整质量门禁为后端 47 项测试、前端 9 项测试、Ruff、TypeScript 类型检查及生产构建。容器级验收还应确认 Worker 注册三个 `alert_sage.workflow.*` 任务和一个 `alert_sage.case.sync` 任务，并通过 Nginx SSE 路由按事件序号补发。
+专项自动化验证覆盖异步准备、人工决策、投递失败和重试；V2.2 完整质量门禁为后端 58 项测试、前端 9 项测试、Ruff、TypeScript 类型检查、Alembic 差异检查及生产构建。容器级验收还应确认 Worker 注册三个 `alert_sage.workflow.*` 任务和一个 `alert_sage.case.sync` 任务，并通过 Nginx SSE 路由按事件序号补发。
 
 ## 11. V1.4 专项验证
 
@@ -341,3 +362,24 @@ uv run pytest -q tests/test_dify_knowledge.py
 ```
 
 2026-07-19 已使用 Dify Cloud 完成真实验收：空数据集首次只读检索按预期返回脱敏 `503`；批准首条报告后，案例一次同步为 `synced` 并获得真实文档 UUID。使用唯一关键词检索命中 4 个片段，首条结果指向同一文档并保留 `dify://` 来源；第二条告警的诊断报告生成 1 条 Dify 知识证据，之后以拒绝结束且未创建额外案例。对已同步案例调用重试接口返回 `dispatched=false`。浏览器实测页面无错误覆盖层和控制台错误，长文档内容不会造成横向溢出。
+
+## 13. V2.2 DeepSeek 专项验证
+
+确认 `.env` 已同时启用 DeepSeek 与 Dify 后重建运行服务：
+
+```powershell
+docker compose config --quiet
+docker compose up -d --build api worker web
+docker compose ps
+```
+
+自动化合约测试使用 `httpx.MockTransport`，不访问云端或读取真实密钥：
+
+```powershell
+Set-Location backend
+uv run pytest tests/test_deepseek_diagnostic_model.py
+```
+
+专项覆盖 JSON Mode 请求、严格输出 Schema、未知证据引用修复、超长不可信输入截断、`429` 重试、鉴权脱敏、密钥 `SecretStr` 和 Mock/DeepSeek 工厂切换。完整验收应创建合成告警，确认报告模型与 Prompt 版本，检查知识证据的 `dify://` 来源，在 Web 批准报告，等待案例同步后按案例 UUID 回检。
+
+2026-07-20 已完成真实验收：`deepseek-v4-flash` 的诊断和建议请求均返回 `200`，工作流约 10.5 秒进入人工确认，报告包含指标、日志、CMDB 和 Dify 四类证据，知识来源可追溯到既有 Dify 片段。Web 正确显示模型名、`diagnosis-deepseek-v1`、85% 置信度和人工决策入口。批准后工作流变为 `completed`，案例 `a871f7c0-4910-5c10-92b4-72ab75628746` 首次同步为 `synced`，Dify 文档 ID 为 `6659fa5b-004d-4aba-a07a-f2edbd0e7056`；使用案例 UUID 回检命中同一文档。浏览器无错误覆盖层和控制台错误。
