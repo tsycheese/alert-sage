@@ -16,7 +16,7 @@
 Copy-Item .env.example .env
 ```
 
-`.env` 不得提交。变量使用 `ALERT_SAGE_` 前缀映射后端配置；容器内数据库地址由 Compose 注入，仓库示例在宿主机使用 PostgreSQL `15432`、Redis `16379`、API `18000` 和 Web `15173`，避免与常用默认端口冲突。
+`.env` 不得提交。变量使用 `ALERT_SAGE_` 前缀映射后端配置；容器内数据库地址由 Compose 注入，仓库示例在宿主机使用 PostgreSQL `15432`、Redis `16379`、API `18000`、Web `15173`、Worker 指标 `19101`、Prometheus `19090` 和 Grafana `13000`，避免与常用默认端口冲突。
 
 ### 2.1 Dify Cloud
 
@@ -58,6 +58,19 @@ ALERT_SAGE_DIAGNOSTIC_MODEL_THINKING_ENABLED=false
 
 后端集成测试读取 `ALERT_SAGE_TEST_DATABASE_URL`，缺省时复用开发数据库连接，但只在随机命名的临时 Schema 中建表。每项测试结束后会删除对应 Schema，不会清空开发业务表。
 
+### 2.3 可观测性
+
+`.env.example` 默认启用指标并保留冲突较少的宿主机端口：
+
+```dotenv
+WORKER_METRICS_PORT=19101
+PROMETHEUS_PORT=19090
+GRAFANA_PORT=13000
+ALERT_SAGE_METRICS_ENABLED=true
+```
+
+API 指标位于 `http://localhost:18000/metrics`，Worker multiprocess 指标位于 `http://localhost:19101/metrics`。Prometheus UI 位于 `http://localhost:19090`，预配置 Grafana Dashboard 位于 `http://localhost:13000/d/alert-sage-overview`，匿名访问仅授予 Viewer。指标系统故障不得改变业务结果；需要按具体告警或运行排障时，应查询 PostgreSQL 审计事件，而不是给 Prometheus 增加高基数 ID 标签。
+
 ## 3. 完整容器环境
 
 构建并启动：
@@ -72,12 +85,14 @@ Compose 会依次：
 2. 构建 API 镜像，执行 Alembic 迁移、初始化 LangGraph checkpoint 表并启动 Uvicorn。
 3. 启动 Celery Worker，使用 Redis Broker 调度工作流任务。
 4. 构建 React 静态资源，通过 Nginx 提供页面并代理 `/api`，SSE 路由关闭代理缓冲。
+5. 启动 Prometheus，分别抓取 API 与 Worker 指标端点并保留七天数据。
+6. 启动 Grafana，通过仓库内 provisioning 自动加载 Prometheus 数据源和 V2.3 Dashboard。
 
 检查状态：
 
 ```powershell
 docker compose ps
-docker compose logs api worker
+docker compose logs api worker prometheus grafana
 ```
 
 删除容器但保留数据卷：
@@ -186,7 +201,7 @@ npm run build
 - Web 能展示 API 实时健康状态，以及告警列表、创建、详情、空数据、加载、错误、幂等冲突和 404 状态。
 - 列表筛选和分页状态写入 URL，可刷新和分享；创建成功后进入对应详情页。
 - 后端测试、前端测试、类型检查和构建全部通过。
-- Docker Compose 五个服务均处于运行或健康状态。
+- Docker Compose 七个服务均处于运行或健康状态。
 - `workflow_runs`、`workflow_events`、`tool_executions`、`diagnosis_reports`、`human_decisions`、`cases` 已通过迁移创建。
 - 数据库能阻止同一告警存在多个活动运行，以及重复事件序号、工具执行和人工决策。
 - 工作流 State、诊断报告和人工决策输入通过严格 Pydantic Schema 校验。
@@ -205,7 +220,7 @@ npm run build
 
 ## 7. 已知边界
 
-- DeepSeek 与 Dify 已完成真实 Cloud 验收，离线测试仍默认使用 Mock；Prometheus、日志和 CMDB 目前仍为确定性模拟适配器。
+- DeepSeek 与 Dify 已完成真实 Cloud 验收，离线测试仍默认使用 Mock；真实 Prometheus/Grafana 监控栈已接入，但工作流上下文中的指标、日志和 CMDB 数据源目前仍为确定性模拟适配器。
 - 当前只记录报告级模型名与 Prompt 版本，尚未持久化 token 用量、供应商 request ID、单次调用延迟和费用。
 - 真实模型调用尚未实现熔断与全局预算；当前只有超时、有限重试、输出修复和输入长度预算。
 - V1.3C 使用数据库事务提交后投递 Celery；首次投递失败可见且可重试，但尚未使用事务性 Outbox 消除进程在提交与投递之间退出的窗口，Outbox 计划在 V2 落地。
@@ -383,3 +398,37 @@ uv run pytest tests/test_deepseek_diagnostic_model.py
 专项覆盖 JSON Mode 请求、严格输出 Schema、未知证据引用修复、超长不可信输入截断、`429` 重试、鉴权脱敏、密钥 `SecretStr` 和 Mock/DeepSeek 工厂切换。完整验收应创建合成告警，确认报告模型与 Prompt 版本，检查知识证据的 `dify://` 来源，在 Web 批准报告，等待案例同步后按案例 UUID 回检。
 
 2026-07-20 已完成真实验收：`deepseek-v4-flash` 的诊断和建议请求均返回 `200`，工作流约 10.5 秒进入人工确认，报告包含指标、日志、CMDB 和 Dify 四类证据，知识来源可追溯到既有 Dify 片段。Web 正确显示模型名、`diagnosis-deepseek-v1`、85% 置信度和人工决策入口。批准后工作流变为 `completed`，案例 `a871f7c0-4910-5c10-92b4-72ab75628746` 首次同步为 `synced`，Dify 文档 ID 为 `6659fa5b-004d-4aba-a07a-f2edbd0e7056`；使用案例 UUID 回检命中同一文档。浏览器无错误覆盖层和控制台错误。
+
+## 14. V2.3 Prometheus/Grafana 专项验证
+
+构建并启动七个服务：
+
+```powershell
+docker compose config --quiet
+docker compose up -d --build
+docker compose ps
+docker compose logs --tail=100 api worker prometheus grafana
+```
+
+配置与抓取验证：
+
+```powershell
+docker compose exec prometheus promtool check config /etc/prometheus/prometheus.yml
+Invoke-RestMethod http://localhost:19090/api/v1/targets
+Invoke-RestMethod http://localhost:13000/api/health
+Invoke-RestMethod http://localhost:13000/api/dashboards/uid/alert-sage-overview
+```
+
+验收标准：
+
+1. API 与 Worker 两个 Prometheus target 均为 `up`，API `/metrics` 和 Worker `:9101/metrics` 可抓取。
+2. 发起一次完整诊断后，Worker 指标出现工作流、七节点、四工具、LLM 和知识检索序列；批准后出现案例同步序列。
+3. HTTP 标签使用 OpenAPI 路由模板，指标输出中不出现具体告警 ID、检索问题、错误正文或文档 ID。
+4. Grafana 自动加载 UID 为 `alert-sage-overview` 的九面板 Dashboard，数据源健康且页面无 provisioning 错误。
+5. Worker 重启后只清理专用 multiprocess 目录中的 Prometheus `*.db`，不依赖指标保存业务状态。
+
+自动化验证覆盖指标端点自排除、声明路由归一化、节点与知识适配器埋点、LLM 重试/输出修复指标、案例同步状态归一化，以及 Worker 指标目录安全清理。不能仅以配置文件可解析代替运行态验证。
+
+2026-07-20 已完成运行态验收：七个 Compose 服务均为运行/健康状态，`promtool` 校验成功，API 与 Worker 两个 target 均为 `up`；Grafana 13.1.0 的 Prometheus 数据源健康，UID 为 `alert-sage-overview` 的九面板 Dashboard 已自动加载。合成告警 `v2-3-observability-e2e-1784531528626` 完成 Dify 检索、DeepSeek 诊断与建议、人工批准及案例发布，Worker 暴露两次工作流操作、七节点、四工具、两次成功 LLM 请求和知识检索/发布指标，输出中不含告警 ID 或测试标记。首次验收发现案例业务状态已为 `synced`，但任务因字符串状态访问 `.value` 而误报失败；修复为统一状态归一化并补充任务级测试后，对同一案例幂等重投在约 92ms 内成功并产生 `status="synced"` 指标，未重复发布文档。浏览器确认九个面板有内容、无错误覆盖层或控制台错误。
+
+最终质量门为后端 63 项测试、前端 9 项测试、Ruff、Python 编译、Alembic 差异检查、TypeScript 类型检查和生产构建全部通过。

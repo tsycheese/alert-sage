@@ -81,6 +81,12 @@ V2.2 将诊断与建议拆为两次 JSON Mode 调用。每次响应先校验供�
 
 模型只生成摘要、根因和建议。报告证据、来源、模型名和 Prompt 版本由可信应用代码补齐；告警 payload、人工反馈和证据内容有明确长度上限。所有外部内容都按不可信数据包裹，密钥和供应商响应正文不得进入日志或业务错误。
 
+### 3.5 Prometheus 与 Grafana 的定位
+
+Prometheus 和 Grafana 只保存可重建的运行观测数据，不作为告警、工作流、报告或案例的事实来源。API 在 `/metrics` 暴露单进程 Registry；Celery prefork Worker 在独立端口暴露 multiprocess Registry。Worker 启动脚本只清理专用 `PROMETHEUS_MULTIPROC_DIR` 下的 `*.db` 文件，并在 fork 前完成环境准备。
+
+V2.3 只使用 Counter 和 Histogram，避免 Python 多进程模式不支持或语义受限的 Gauge、Info、自定义 Collector 与 exemplar。所有标签来自固定枚举或声明式路由模板；禁止将 `alert_id`、`workflow_run_id`、实例、任意服务名、检索问题、错误正文或文档 ID 放入指标标签。详细决策见 [ADR 0008](adr/0008-prometheus-grafana-observability.md)。
+
 ## 4. 总体架构
 
 ```mermaid
@@ -101,6 +107,10 @@ flowchart TB
     GRAPH --> PG
     WORKER --> CASE_PUBLISHER["CasePublisher"]
     CASE_PUBLISHER --> DIFY
+
+    PROM["Prometheus"] -->|pull| API
+    PROM -->|pull| WORKER
+    GRAFANA["Grafana Dashboard"] --> PROM
 
     GRAPH -->|节点事件| REDIS
     REDIS --> SSE
@@ -278,20 +288,16 @@ API 和 Celery Worker 共享 `backend/app` 中的领域与工作流代码，只�
 
 ## 8. 可观测性
 
-建议第一版提供：
+V2.3 已提供以下指标族：
 
-- `alert_workflow_total{status,severity}`
-- `alert_workflow_duration_seconds`
-- `workflow_node_duration_seconds{node}`
-- `tool_calls_total{tool,status}`
-- `tool_call_duration_seconds{tool}`
-- `workflow_interrupt_total{action}`
-- `llm_request_total{model,status}`
-- `llm_tokens_total{model,type}`
-- `rag_retrieval_duration_seconds{provider}`
-- `rag_retrieval_results{provider}`
+- HTTP：请求总数和耗时，标签为方法、声明式路由模板及状态码。
+- 工作流：启动、恢复、重试的执行总数与耗时，以及七个 LangGraph 节点耗时。
+- 工具：各上下文工具的调用结果与耗时。
+- LLM：按供应商、模型和操作记录请求结果、耗时、传输重试和结构化输出修复。
+- 知识服务：Dify/Mock 检索与发布的结果、耗时及检索片段数量。
+- 案例同步：按知识供应商和同步终态记录任务总数与耗时。
 
-所有日志包含 `alert_id`、`workflow_run_id`、`thread_id`、`node` 和 `request_id`，便于串联一次诊断链路。
+Dashboard 展示 API 速率/P95、工作流和节点 P95、工具 P95、LLM 与知识服务 P95、Worker 进程累计模型成功率、重试、输出修复及案例同步失败。结构化日志关联 ID 和单次诊断可视化时间线仍属于后续范围，不能由聚合指标替代。
 
 ## 9. 可靠性约束
 

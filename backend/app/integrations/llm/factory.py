@@ -17,6 +17,7 @@ def create_diagnostic_model(settings: Settings | None = None) -> DiagnosticModel
             base_url=resolved.diagnostic_model_base_url,
             api_key=resolved.diagnostic_model_api_key.get_secret_value(),
             model=resolved.diagnostic_model_name,
+            provider=resolved.diagnostic_model_provider,
             timeout_seconds=resolved.diagnostic_model_timeout_seconds,
             max_retries=resolved.diagnostic_model_max_retries,
             max_tokens=resolved.diagnostic_model_max_tokens,

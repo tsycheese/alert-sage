@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
+from time import monotonic
 from uuid import UUID
 
 from redis.asyncio import Redis
@@ -10,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.core.config import get_settings
 from app.integrations.knowledge.factory import create_knowledge_retriever
 from app.integrations.llm.factory import create_diagnostic_model
+from app.observability.metrics import observe_workflow
 from app.tasks.celery_app import celery_app
 from app.workflows.alert.adapters import default_context_providers
 from app.workflows.alert.checkpoint import open_alert_workflow_service
@@ -53,10 +55,35 @@ async def _run_locked(workflow_run_id: UUID, operation: WorkflowOperation) -> ob
         await engine.dispose()
 
 
+async def _run_observed(
+    workflow_run_id: UUID,
+    operation_name: str,
+    operation: WorkflowOperation,
+) -> object | None:
+    started = monotonic()
+    status: object = "failed"
+    try:
+        result = await _run_locked(workflow_run_id, operation)
+        status = result.status if isinstance(result, WorkflowExecutionResult) else "lock_skipped"
+        return result
+    finally:
+        observe_workflow(
+            operation=operation_name,
+            status=status,
+            duration_seconds=max(0.0, monotonic() - started),
+        )
+
+
 @celery_app.task(name="alert_sage.workflow.start")
 def run_workflow_start(workflow_run_id: str) -> None:
     run_id = UUID(workflow_run_id)
-    result = asyncio.run(_run_locked(run_id, lambda service: service.execute_start(run_id)))
+    result = asyncio.run(
+        _run_observed(
+            run_id,
+            "start",
+            lambda service: service.execute_start(run_id),
+        )
+    )
     _dispatch_case_sync(result)
 
 
@@ -65,8 +92,9 @@ def run_workflow_resume(workflow_run_id: str, decision_id: str) -> None:
     run_id = UUID(workflow_run_id)
     stored_decision_id = UUID(decision_id)
     result = asyncio.run(
-        _run_locked(
+        _run_observed(
             run_id,
+            "resume",
             lambda service: service.execute_resume(
                 workflow_run_id=run_id,
                 decision_id=stored_decision_id,
@@ -79,7 +107,13 @@ def run_workflow_resume(workflow_run_id: str, decision_id: str) -> None:
 @celery_app.task(name="alert_sage.workflow.retry")
 def run_workflow_retry(workflow_run_id: str) -> None:
     run_id = UUID(workflow_run_id)
-    result = asyncio.run(_run_locked(run_id, lambda service: service.execute_retry(run_id)))
+    result = asyncio.run(
+        _run_observed(
+            run_id,
+            "retry",
+            lambda service: service.execute_retry(run_id),
+        )
+    )
     _dispatch_case_sync(result)
 
 

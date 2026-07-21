@@ -1,0 +1,24 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: alert-sage-api
+    metrics_path: /metrics
+    sample_limit: 5000
+    label_limit: 12
+    label_value_length_limit: 160
+    static_configs:
+      - targets: ["api:8000"]
+        labels:
+          component: api
+
+  - job_name: alert-sage-worker
+    metrics_path: /metrics
+    sample_limit: 5000
+    label_limit: 12
+    label_value_length_limit: 160
+    static_configs:
+      - targets: ["worker:9101"]
+        labels:
+          component: worker

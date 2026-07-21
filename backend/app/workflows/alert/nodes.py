@@ -9,6 +9,7 @@ from langgraph.types import Command, interrupt
 from pydantic import TypeAdapter
 
 from app.models.enums import HumanDecisionAction
+from app.observability.metrics import observe_tool
 from app.schemas.workflow import (
     DiagnosisDraftPayload,
     DiagnosisReportPayload,
@@ -195,6 +196,11 @@ class AlertWorkflowNodes:
                     attempts=attempt,
                     duration_ms=duration_ms,
                 )
+                observe_tool(
+                    tool=provider.name,
+                    status=result.status,
+                    duration_seconds=duration_ms / 1000,
+                )
                 return provider.name, snapshot, None
             except TimeoutError as exc:
                 last_error = exc
@@ -212,5 +218,10 @@ class AlertWorkflowNodes:
             retryable=True,
             attempts=self.tool_max_attempts,
             duration_ms=duration_ms,
+        )
+        observe_tool(
+            tool=provider.name,
+            status=error_code,
+            duration_seconds=duration_ms / 1000,
         )
         return provider.name, None, error

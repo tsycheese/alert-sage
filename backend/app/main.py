@@ -4,12 +4,15 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.errors import ApiError
 from app.core.exception_handlers import api_error_handler, validation_error_handler
 from app.db.session import engine
+from app.observability.http import PrometheusMetricsMiddleware
 
 
 @asynccontextmanager
@@ -33,9 +36,20 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    if settings.metrics_enabled:
+        application.add_middleware(PrometheusMetricsMiddleware)
     application.add_exception_handler(ApiError, api_error_handler)
     application.add_exception_handler(RequestValidationError, validation_error_handler)
     application.include_router(api_router, prefix=settings.api_v1_prefix)
+
+    if settings.metrics_enabled:
+
+        @application.get("/metrics", include_in_schema=False)
+        async def prometheus_metrics() -> Response:
+            return Response(
+                content=generate_latest(),
+                headers={"Content-Type": CONTENT_TYPE_LATEST},
+            )
 
     @application.get("/", tags=["meta"])
     async def service_metadata() -> dict[str, str]:

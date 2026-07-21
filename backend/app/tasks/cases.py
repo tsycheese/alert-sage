@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import suppress
+from time import monotonic
 from uuid import UUID
 
 from redis.asyncio import Redis
@@ -8,11 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.config import get_settings
 from app.integrations.knowledge.factory import create_case_publisher
-from app.services.cases import CaseSyncService
+from app.observability.metrics import label_value, observe_case_sync
+from app.services.cases import CaseSyncResult, CaseSyncService
 from app.tasks.celery_app import celery_app
 
 
-async def _sync_case(case_id: UUID) -> None:
+async def _sync_case(case_id: UUID) -> CaseSyncResult | None:
     settings = get_settings()
     engine = create_async_engine(settings.database_url, pool_pre_ping=True)
     session_factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
@@ -35,6 +37,7 @@ async def _sync_case(case_id: UUID) -> None:
         )
         result = await service.execute(case_id)
         workflow_run_id = result.workflow_run_id
+        return result
     finally:
         if workflow_run_id is None:
             with suppress(Exception):
@@ -55,4 +58,15 @@ async def _sync_case(case_id: UUID) -> None:
 
 @celery_app.task(name="alert_sage.case.sync")
 def run_case_sync(case_id: str) -> None:
-    asyncio.run(_sync_case(UUID(case_id)))
+    settings = get_settings()
+    started = monotonic()
+    status = "failed"
+    try:
+        result = asyncio.run(_sync_case(UUID(case_id)))
+        status = label_value(result.status) if result is not None else "lock_skipped"
+    finally:
+        observe_case_sync(
+            provider=settings.knowledge_provider,
+            status=status,
+            duration_seconds=max(0.0, monotonic() - started),
+        )

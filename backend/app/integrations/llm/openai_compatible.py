@@ -4,10 +4,16 @@ import asyncio
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from time import monotonic
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 
+from app.observability.metrics import (
+    increment_llm_retry,
+    observe_llm_repair,
+    observe_llm_request,
+)
 from app.schemas.workflow import (
     DiagnosisDraftPayload,
     EvidenceItem,
@@ -38,6 +44,7 @@ class OpenAICompatibleModelConfig:
     base_url: str
     api_key: str
     model: str
+    provider: str = "openai-compatible"
     timeout_seconds: float = 60.0
     max_retries: int = 2
     max_tokens: int = 3000
@@ -236,7 +243,20 @@ class OpenAICompatibleDiagnosticModel:
     ) -> T:
         current_messages = list(messages)
         for repair_attempt in range(2):
-            content, finish_reason = await self._complete(current_messages)
+            try:
+                content, finish_reason = await self._complete(
+                    current_messages,
+                    operation=operation,
+                )
+            except Exception:
+                if repair_attempt == 1:
+                    observe_llm_repair(
+                        provider=self.config.provider,
+                        model=self.config.model,
+                        operation=operation,
+                        outcome="failed",
+                    )
+                raise
             issue: str | None = None
             if finish_reason == "length":
                 issue = "response was truncated because it exceeded max_tokens"
@@ -248,12 +268,25 @@ class OpenAICompatibleDiagnosticModel:
                     candidate = response_model.model_validate(payload)
                     issue = output_validator(candidate) if output_validator else None
                     if issue is None:
+                        if repair_attempt == 1:
+                            observe_llm_repair(
+                                provider=self.config.provider,
+                                model=self.config.model,
+                                operation=operation,
+                                outcome="succeeded",
+                            )
                         return candidate
                 except json.JSONDecodeError:
                     issue = "response was not valid JSON"
                 except ValidationError as exc:
                     issue = self._validation_issue(exc)
             if repair_attempt == 1:
+                observe_llm_repair(
+                    provider=self.config.provider,
+                    model=self.config.model,
+                    operation=operation,
+                    outcome="failed",
+                )
                 raise DiagnosticModelResponseError(
                     f"Diagnostic model {operation} output failed validation after repair"
                 )
@@ -271,35 +304,65 @@ class OpenAICompatibleDiagnosticModel:
             )
         raise DiagnosticModelResponseError(f"Diagnostic model {operation} output failed validation")
 
-    async def _complete(self, messages: list[dict[str, str]]) -> tuple[str, str | None]:
-        async with self._client() as client:
-            payload = await self._request_json(
-                client,
-                "POST",
-                "/chat/completions",
-                json={
-                    "model": self.config.model,
-                    "messages": messages,
-                    "response_format": {"type": "json_object"},
-                    "stream": False,
-                    "temperature": self.config.temperature,
-                    "max_tokens": self.config.max_tokens,
-                    "thinking": {"type": "enabled" if self.config.thinking_enabled else "disabled"},
-                },
+    async def _complete(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        operation: str,
+    ) -> tuple[str, str | None]:
+        started = monotonic()
+        status = "error"
+        try:
+            async with self._client() as client:
+                payload = await self._request_json(
+                    client,
+                    "POST",
+                    "/chat/completions",
+                    operation=operation,
+                    json={
+                        "model": self.config.model,
+                        "messages": messages,
+                        "response_format": {"type": "json_object"},
+                        "stream": False,
+                        "temperature": self.config.temperature,
+                        "max_tokens": self.config.max_tokens,
+                        "thinking": {
+                            "type": "enabled" if self.config.thinking_enabled else "disabled"
+                        },
+                    },
+                )
+            response = self._validate_external(
+                _ChatCompletionResponse,
+                payload,
+                "chat completion",
             )
-        response = self._validate_external(
-            _ChatCompletionResponse,
-            payload,
-            "chat completion",
-        )
-        choice = response.choices[0]
-        return choice.message.content or "", choice.finish_reason
+            choice = response.choices[0]
+            status = "success"
+            return choice.message.content or "", choice.finish_reason
+        except DiagnosticModelAuthenticationError:
+            status = "authentication_error"
+            raise
+        except DiagnosticModelRequestError:
+            status = "request_error"
+            raise
+        except DiagnosticModelResponseError:
+            status = "response_error"
+            raise
+        finally:
+            observe_llm_request(
+                provider=self.config.provider,
+                model=self.config.model,
+                operation=operation,
+                status=status,
+                duration_seconds=max(0.0, monotonic() - started),
+            )
 
     async def _request_json(
         self,
         client: httpx.AsyncClient,
         method: str,
         path: str,
+        operation: str,
         **kwargs: object,
     ) -> object:
         for attempt in range(self.config.max_retries + 1):
@@ -310,6 +373,12 @@ class OpenAICompatibleDiagnosticModel:
                     raise DiagnosticModelRequestError(
                         "Diagnostic model request failed after retries"
                     ) from exc
+                increment_llm_retry(
+                    provider=self.config.provider,
+                    model=self.config.model,
+                    operation=operation,
+                    reason="transport",
+                )
                 await self._retry_delay(attempt)
                 continue
             if response.status_code in {401, 403}:
@@ -318,6 +387,12 @@ class OpenAICompatibleDiagnosticModel:
                 )
             if response.status_code == 429 or response.status_code >= 500:
                 if attempt < self.config.max_retries:
+                    increment_llm_retry(
+                        provider=self.config.provider,
+                        model=self.config.model,
+                        operation=operation,
+                        reason=("rate_limit" if response.status_code == 429 else "server_error"),
+                    )
                     await self._retry_delay(attempt)
                     continue
             if response.is_error:

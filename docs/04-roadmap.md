@@ -90,8 +90,8 @@ V1.3B 已完成可恢复七节点 LangGraph。V1.3C 已完成异步工作流与 
 
 ### 4.3 可观测性
 
-- Prometheus 暴露 API、节点、工具、LLM 和 RAG 指标。
-- Grafana 提供核心 Dashboard。
+- [x] Prometheus 分别抓取 API 与 Celery multiprocess Worker，暴露 API、工作流、节点、工具、LLM、RAG 和案例同步指标。
+- [x] Grafana 通过 provisioning 提供版本化核心 Dashboard。
 - 所有日志包含请求、告警、运行和线程关联 ID。
 - 增加一次完整诊断链路的可视化时间线。
 

@@ -3,6 +3,7 @@ from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
+from app.observability.nodes import observed_node
 from app.workflows.alert.adapters import (
     ContextProvider,
     DiagnosticModel,
@@ -28,13 +29,13 @@ def build_alert_graph(
         tool_max_attempts=tool_max_attempts,
     )
     builder = StateGraph(AlertGraphState)
-    builder.add_node("parse_alert", nodes.parse_alert)
-    builder.add_node("classify_alert", nodes.classify_alert)
-    builder.add_node("collect_context", nodes.collect_context)
-    builder.add_node("diagnose", nodes.diagnose)
-    builder.add_node("recommend", nodes.recommend)
-    builder.add_node("human_review", nodes.human_review)
-    builder.add_node("finalize", nodes.finalize)
+    builder.add_node("parse_alert", observed_node("parse_alert", nodes.parse_alert))
+    builder.add_node("classify_alert", observed_node("classify_alert", nodes.classify_alert))
+    builder.add_node("collect_context", observed_node("collect_context", nodes.collect_context))
+    builder.add_node("diagnose", observed_node("diagnose", nodes.diagnose))
+    builder.add_node("recommend", observed_node("recommend", nodes.recommend))
+    builder.add_node("human_review", observed_node("human_review", nodes.human_review))
+    builder.add_node("finalize", observed_node("finalize", nodes.finalize))
 
     builder.add_edge(START, "parse_alert")
     builder.add_edge("parse_alert", "classify_alert")

@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     celery_broker_url: str = "redis://localhost:6379/0"
     workflow_lock_ttl_seconds: int = 300
     workflow_event_poll_seconds: float = 2.0
+    metrics_enabled: bool = True
+    worker_metrics_port: int = Field(default=9101, ge=1, le=65_535)
     workflow_tool_timeout_seconds: float = Field(default=10.0, gt=0)
     case_sync_timeout_seconds: float = Field(default=180.0, gt=0)
     knowledge_retrieval_timeout_seconds: float = Field(default=15.0, gt=0)
