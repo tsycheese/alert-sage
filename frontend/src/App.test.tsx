@@ -7,6 +7,7 @@ import type {
   CaseResponse,
   KnowledgeSearchResponse,
   WorkflowDetailResponse,
+  WorkflowEventResponse,
 } from "./api/generated";
 import { renderApp } from "./test/renderApp";
 
@@ -72,6 +73,29 @@ const COMPLETED_WORKFLOW: WorkflowDetailResponse = {
     finished_at: "2026-07-18T06:32:00Z",
   },
 };
+
+const WORKFLOW_EVENTS: WorkflowEventResponse[] = [
+  {
+    id: "419f73e2-c928-70b2-b37a-10f876a72565",
+    workflow_run_id: WORKFLOW.run.id,
+    sequence: 1,
+    event_type: "workflow_started",
+    node_name: null,
+    status: "running",
+    payload: { correlation: { request_id: "50000000-0000-0000-0000-000000000005" } },
+    occurred_at: "2026-07-18T06:31:10.000Z",
+  },
+  {
+    id: "519f73e2-c928-70b2-b37a-10f876a72565",
+    workflow_run_id: WORKFLOW.run.id,
+    sequence: 2,
+    event_type: "node_completed",
+    node_name: "collect_context",
+    status: "running",
+    payload: { tool_name: "knowledge" },
+    occurred_at: "2026-07-18T06:31:11.500Z",
+  },
+];
 
 const FAILED_CASE: CaseResponse = {
   id: "319f73e2-c928-70b2-b37a-10f876a72565",
@@ -280,7 +304,7 @@ describe("Alert Sage routes", () => {
       const url = requestUrl(input);
       if (url.includes("/health/live")) return healthResponse();
       if (url.endsWith("/events?after=0")) {
-        return jsonResponse({ items: [], last_sequence: 0 });
+        return jsonResponse({ items: WORKFLOW_EVENTS, last_sequence: 2 });
       }
       if (url.endsWith("/workflow")) return jsonResponse(WORKFLOW);
       if (url.endsWith("/decisions") && requestMethod(input, init) === "POST") {
@@ -302,6 +326,11 @@ describe("Alert Sage routes", () => {
       .toBeInTheDocument();
     expect(screen.getByText("86%")).toBeInTheDocument();
     expect(screen.getByText("diagnosis-v1")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "诊断链路时间线" }))
+      .toBeInTheDocument();
+    expect(screen.getByText("收集上下文")).toBeInTheDocument();
+    expect(screen.getByText("与上一事件间隔 1.5 s")).toBeInTheDocument();
+    expect(screen.getByText(/请求 50000000-0000/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /批准建议/ }));
 
     await waitFor(() => {

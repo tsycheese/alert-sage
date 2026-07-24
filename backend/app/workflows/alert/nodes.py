@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from time import monotonic
@@ -26,6 +27,7 @@ from app.workflows.alert.state import (
 )
 
 RecommendationListAdapter = TypeAdapter(list[RecommendationItem])
+logger = logging.getLogger(__name__)
 
 
 class AlertWorkflowNodes:
@@ -201,6 +203,16 @@ class AlertWorkflowNodes:
                     status=result.status,
                     duration_seconds=duration_ms / 1000,
                 )
+                logger.info(
+                    "workflow.tool.completed",
+                    extra={
+                        "node": "collect_context",
+                        "tool": provider.name,
+                        "status": result.status,
+                        "attempt": attempt,
+                        "duration_ms": duration_ms,
+                    },
+                )
                 return provider.name, snapshot, None
             except TimeoutError as exc:
                 last_error = exc
@@ -223,5 +235,17 @@ class AlertWorkflowNodes:
             tool=provider.name,
             status=error_code,
             duration_seconds=duration_ms / 1000,
+        )
+        logger.warning(
+            "workflow.tool.completed",
+            extra={
+                "node": "collect_context",
+                "tool": provider.name,
+                "status": error_code,
+                "attempt": self.tool_max_attempts,
+                "duration_ms": duration_ms,
+                "error_type": type(last_error).__name__ if last_error is not None else None,
+                "error_code": error_code,
+            },
         )
         return provider.name, None, error

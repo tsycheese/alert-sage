@@ -1,3 +1,6 @@
+import asyncio
+import json
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID
@@ -10,10 +13,18 @@ from app.integrations.knowledge.retrieval import DocumentChunk
 from app.main import app
 from app.models.enums import KnowledgeSyncStatus
 from app.observability.adapters import InstrumentedKnowledgeRetriever
+from app.observability.logging import (
+    JsonLogFormatter,
+    bind_log_context,
+    correlation_from_celery_headers,
+    get_log_context,
+)
 from app.observability.metrics import label_value
 from app.observability.nodes import observed_node
 from app.services.cases import CaseSyncResult
 from app.tasks import cases as case_tasks
+from app.tasks import workflows as workflow_tasks
+from app.tasks.dispatcher import CeleryWorkflowDispatcher
 from scripts.run_worker import prepare_multiprocess_directory
 
 
@@ -47,9 +58,97 @@ async def test_metrics_endpoint_normalizes_routes_and_excludes_itself() -> None:
     assert sample_delta(
         "alert_sage_http_requests_total", unmatched_labels, unmatched_before
     ) == pytest.approx(1)
-    assert first_metrics.text == second_metrics.text
+    assert 'route="/metrics"' not in first_metrics.text
     assert "/missing/unique-alert-id" not in second_metrics.text
     assert 'route="/metrics"' not in second_metrics.text
+
+
+@pytest.mark.asyncio
+async def test_http_request_id_is_server_generated_and_exposed() -> None:
+    supplied = "client-trace-001"
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            "/api/v1/health/live",
+            headers={
+                "Origin": "http://localhost:5173",
+                "X-Request-ID": "untrusted-value",
+                "X-Client-Request-ID": supplied,
+            },
+        )
+
+    request_id = response.headers["X-Request-ID"]
+    assert response.status_code == 200
+    assert UUID(request_id)
+    assert request_id != "untrusted-value"
+    assert response.headers["access-control-expose-headers"] == "X-Request-ID"
+
+
+@pytest.mark.asyncio
+async def test_log_context_is_isolated_between_concurrent_tasks() -> None:
+    async def read_after_yield(request_id: str) -> str | None:
+        with bind_log_context(request_id=request_id):
+            await asyncio.sleep(0)
+            return get_log_context().get("request_id")
+
+    first = "10000000-0000-0000-0000-000000000001"
+    second = "20000000-0000-0000-0000-000000000002"
+    assert await asyncio.gather(read_after_yield(first), read_after_yield(second)) == [
+        first,
+        second,
+    ]
+    assert get_log_context() == {}
+
+
+def test_json_log_formatter_redacts_credentials_and_keeps_correlation() -> None:
+    formatter = JsonLogFormatter(service="test-service", environment="test")
+    record = logging.LogRecord(
+        name="test.logger",
+        level=logging.ERROR,
+        pathname=__file__,
+        lineno=1,
+        msg=(
+            "Authorization: Bearer top-secret "
+            "postgresql://alert_sage:database-secret@localhost/alert_sage"
+        ),
+        args=(),
+        exc_info=None,
+    )
+    request_id = "30000000-0000-0000-0000-000000000003"
+    with bind_log_context(request_id=request_id, alert_id="40000000-0000-0000-0000-000000000004"):
+        payload = json.loads(formatter.format(record))
+
+    serialized = json.dumps(payload)
+    assert payload["event"].startswith("Authorization: [REDACTED]")
+    assert payload["request_id"] == request_id
+    assert "top-secret" not in serialized
+    assert "database-secret" not in serialized
+
+
+def test_dispatcher_propagates_whitelisted_celery_headers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def record_dispatch(**kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(workflow_tasks.run_workflow_start, "apply_async", record_dispatch)
+    request_id = "50000000-0000-0000-0000-000000000005"
+    workflow_run_id = UUID("60000000-0000-0000-0000-000000000006")
+    with bind_log_context(
+        request_id=request_id,
+        alert_id="70000000-0000-0000-0000-000000000007",
+        thread_id="thread-safe-001",
+    ):
+        CeleryWorkflowDispatcher().start(workflow_run_id)
+
+    headers = captured["headers"]
+    assert isinstance(headers, dict)
+    assert headers["alert_sage_request_id"] == request_id
+    assert headers["alert_sage_thread_id"] == "thread-safe-001"
+    assert all("secret" not in key for key in headers)
+    restored = correlation_from_celery_headers(headers)
+    assert restored["request_id"] == request_id
 
 
 @pytest.mark.asyncio

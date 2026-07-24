@@ -12,6 +12,7 @@ from app.core.config import get_settings
 from app.core.errors import ApiError
 from app.db.session import get_db_session, get_session_factory
 from app.models.enums import WorkflowRunStatus
+from app.observability.logging import bind_log_context
 from app.schemas.error import ApiErrorResponse
 from app.schemas.workflow import (
     DiagnosisReportResponse,
@@ -94,16 +95,21 @@ async def start_workflow(
     ) as exc:
         raise _workflow_error(exc, alert_id) from exc
     if prepared.created:
-        try:
-            dispatcher.start(prepared.workflow_run_id)
-        except Exception as exc:
-            await service.mark_dispatch_failed(prepared.workflow_run_id, exc)
-            raise ApiError(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                code="workflow_dispatch_failed",
-                message="workflow was stored but task dispatch failed; retry is available",
-                context={"workflow_run_id": str(prepared.workflow_run_id)},
-            ) from exc
+        with bind_log_context(
+            alert_id=prepared.alert_id,
+            workflow_run_id=prepared.workflow_run_id,
+            thread_id=prepared.thread_id,
+        ):
+            try:
+                dispatcher.start(prepared.workflow_run_id)
+            except Exception as exc:
+                await service.mark_dispatch_failed(prepared.workflow_run_id, exc)
+                raise ApiError(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    code="workflow_dispatch_failed",
+                    message="workflow was stored but task dispatch failed; retry is available",
+                    context={"workflow_run_id": str(prepared.workflow_run_id)},
+                ) from exc
     response.headers["Location"] = f"/api/v1/alerts/{alert_id}/workflow"
     run = await WorkflowQueryService(session).latest_run(alert_id)
     return WorkflowAcceptedResponse(
@@ -186,18 +192,23 @@ async def submit_workflow_decision(
     ) as exc:
         raise _workflow_error(exc, alert_id) from exc
     if decision_id is not None:
-        try:
-            dispatcher.resume(run.id, decision_id)
-        except Exception as exc:
-            raise ApiError(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                code="workflow_dispatch_failed",
-                message="decision was stored but task dispatch failed; replay the same request",
-                context={
-                    "workflow_run_id": str(run.id),
-                    "decision_id": str(decision_id),
-                },
-            ) from exc
+        with bind_log_context(
+            alert_id=alert_id,
+            workflow_run_id=run.id,
+            thread_id=run.thread_id,
+        ):
+            try:
+                dispatcher.resume(run.id, decision_id)
+            except Exception as exc:
+                raise ApiError(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    code="workflow_dispatch_failed",
+                    message="decision was stored but task dispatch failed; replay the same request",
+                    context={
+                        "workflow_run_id": str(run.id),
+                        "decision_id": str(decision_id),
+                    },
+                ) from exc
     await session.refresh(run)
     return WorkflowAcceptedResponse(
         workflow_run_id=run.id,
@@ -229,15 +240,20 @@ async def retry_workflow(
         WorkflowStateConflictError,
     ) as exc:
         raise _workflow_error(exc, alert_id) from exc
-    try:
-        dispatcher.retry(run.id)
-    except Exception as exc:
-        raise ApiError(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            code="workflow_dispatch_failed",
-            message="retry was stored but task dispatch failed; retry this request",
-            context={"workflow_run_id": str(run.id)},
-        ) from exc
+    with bind_log_context(
+        alert_id=alert_id,
+        workflow_run_id=run.id,
+        thread_id=run.thread_id,
+    ):
+        try:
+            dispatcher.retry(run.id)
+        except Exception as exc:
+            raise ApiError(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                code="workflow_dispatch_failed",
+                message="retry was stored but task dispatch failed; retry this request",
+                context={"workflow_run_id": str(run.id)},
+            ) from exc
     return WorkflowAcceptedResponse(
         workflow_run_id=run.id,
         status=WorkflowRunStatus.QUEUED,

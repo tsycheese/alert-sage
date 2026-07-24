@@ -67,9 +67,12 @@ WORKER_METRICS_PORT=19101
 PROMETHEUS_PORT=19090
 GRAFANA_PORT=13000
 ALERT_SAGE_METRICS_ENABLED=true
+ALERT_SAGE_LOG_LEVEL=INFO
 ```
 
 API 指标位于 `http://localhost:18000/metrics`，Worker multiprocess 指标位于 `http://localhost:19101/metrics`。Prometheus UI 位于 `http://localhost:19090`，预配置 Grafana Dashboard 位于 `http://localhost:13000/d/alert-sage-overview`，匿名访问仅授予 Viewer。指标系统故障不得改变业务结果；需要按具体告警或运行排障时，应查询 PostgreSQL 审计事件，而不是给 Prometheus 增加高基数 ID 标签。
+
+API 与 Worker 默认输出单行 JSON 日志。每个 API 响应包含服务端生成的 `X-Request-ID`；若需要和调用方日志对齐，可传 `X-Client-Request-ID`，不要尝试覆盖 `X-Request-ID`。排障时可按 `request_id`、`alert_id`、`workflow_run_id`、`thread_id` 或 `case_id` 搜索容器日志。日志不会记录原始告警 payload、Prompt、检索 query、模型响应或供应商响应体。
 
 ## 3. 完整容器环境
 
@@ -431,4 +434,25 @@ Invoke-RestMethod http://localhost:13000/api/dashboards/uid/alert-sage-overview
 
 2026-07-20 已完成运行态验收：七个 Compose 服务均为运行/健康状态，`promtool` 校验成功，API 与 Worker 两个 target 均为 `up`；Grafana 13.1.0 的 Prometheus 数据源健康，UID 为 `alert-sage-overview` 的九面板 Dashboard 已自动加载。合成告警 `v2-3-observability-e2e-1784531528626` 完成 Dify 检索、DeepSeek 诊断与建议、人工批准及案例发布，Worker 暴露两次工作流操作、七节点、四工具、两次成功 LLM 请求和知识检索/发布指标，输出中不含告警 ID 或测试标记。首次验收发现案例业务状态已为 `synced`，但任务因字符串状态访问 `.value` 而误报失败；修复为统一状态归一化并补充任务级测试后，对同一案例幂等重投在约 92ms 内成功并产生 `status="synced"` 指标，未重复发布文档。浏览器确认九个面板有内容、无错误覆盖层或控制台错误。
 
-最终质量门为后端 63 项测试、前端 9 项测试、Ruff、Python 编译、Alembic 差异检查、TypeScript 类型检查和生产构建全部通过。
+V2.3 质量门为后端 63 项测试、前端 9 项测试、Ruff、Python 编译、Alembic 差异检查、TypeScript 类型检查和生产构建全部通过。
+
+## 15. V2.4 结构化日志与诊断时间线专项验证
+
+重建 API 与 Worker 后，检查运行日志是否为单行 JSON，并使用同一条真实告警贯穿 API、Celery、LangGraph、DeepSeek、Dify 与案例同步链路：
+
+```powershell
+docker compose up -d --build api worker
+docker compose logs --tail=100 api worker
+```
+
+验收标准：
+
+1. API 始终生成可信的 `X-Request-ID` 响应头；合法的调用方标识单独保存在 `client_request_id`，不会覆盖服务端请求 ID。
+2. Celery 只传播白名单关联字段，Worker 在没有上游请求时生成新的请求 ID；日志能够按 `request_id`、`alert_id`、`workflow_run_id`、`thread_id` 和 `case_id` 关联。
+3. HTTP、任务、节点、工具、LLM 与知识服务日志使用固定 JSON 字段，不记录 Prompt、原始工具载荷、查询正文、模型回复、密钥、异常正文或堆栈。
+4. 工作流事件持久化请求来源，重复幂等事件保留第一次写入的来源信息。
+5. 告警详情页展示完整的持久化事件时间线、友好名称、状态、相邻事件间隔和请求 ID，并覆盖加载、空数据与错误状态。
+
+2026-07-22 已完成真实端到端验收：告警 `v2-4-correlation-e2e-1784694107777` 经 Dify 检索、DeepSeek 诊断与建议、人工批准和案例发布后进入 `completed`，案例状态为 `synced`，共持久化 19 条事件。启动请求的请求 ID 从 API 投递贯穿首段 Worker 链路，人工决策请求的请求 ID 贯穿恢复、收尾和案例同步链路；日志同时包含相应告警、运行、线程与案例标识。浏览器确认时间线显示 19 项、页面状态为“已完成”，无错误覆盖层、控制台错误或横向溢出。
+
+V2.4 质量门为后端 67 项测试、前端 9 项测试、Ruff、Python 编译、Alembic 差异检查、TypeScript 类型检查、生产构建、Compose 配置检查和真实浏览器验收全部通过。

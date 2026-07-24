@@ -1,5 +1,10 @@
+import logging
 from typing import Protocol
 from uuid import UUID
+
+from app.observability.logging import celery_correlation_headers
+
+logger = logging.getLogger(__name__)
 
 
 class WorkflowDispatcher(Protocol):
@@ -21,6 +26,15 @@ class CeleryWorkflowDispatcher:
         run_workflow_start.apply_async(
             args=[str(workflow_run_id)],
             task_id=f"workflow-start-{workflow_run_id}",
+            headers=celery_correlation_headers(),
+        )
+        logger.info(
+            "celery.task.dispatched",
+            extra={
+                "operation": "workflow.start",
+                "task_id": f"workflow-start-{workflow_run_id}",
+                "workflow_run_id": str(workflow_run_id),
+            },
         )
 
     def resume(self, workflow_run_id: UUID, decision_id: UUID) -> None:
@@ -29,12 +43,28 @@ class CeleryWorkflowDispatcher:
         run_workflow_resume.apply_async(
             args=[str(workflow_run_id), str(decision_id)],
             task_id=f"workflow-resume-{decision_id}",
+            headers=celery_correlation_headers(),
+        )
+        logger.info(
+            "celery.task.dispatched",
+            extra={
+                "operation": "workflow.resume",
+                "task_id": f"workflow-resume-{decision_id}",
+                "workflow_run_id": str(workflow_run_id),
+            },
         )
 
     def retry(self, workflow_run_id: UUID) -> None:
         from app.tasks.workflows import run_workflow_retry
 
-        run_workflow_retry.apply_async(args=[str(workflow_run_id)])
+        run_workflow_retry.apply_async(
+            args=[str(workflow_run_id)],
+            headers=celery_correlation_headers(),
+        )
+        logger.info(
+            "celery.task.dispatched",
+            extra={"operation": "workflow.retry", "workflow_run_id": str(workflow_run_id)},
+        )
 
 
 class CeleryCaseDispatcher:
@@ -44,6 +74,15 @@ class CeleryCaseDispatcher:
         run_case_sync.apply_async(
             args=[str(case_id)],
             task_id=f"case-sync-{case_id}",
+            headers=celery_correlation_headers(),
+        )
+        logger.info(
+            "celery.task.dispatched",
+            extra={
+                "operation": "case.sync",
+                "task_id": f"case-sync-{case_id}",
+                "case_id": str(case_id),
+            },
         )
 
 

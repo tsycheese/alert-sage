@@ -9,6 +9,7 @@ from app.core.errors import ApiError
 from app.db.session import get_db_session, get_session_factory
 from app.integrations.knowledge.cases import MockCasePublisher
 from app.models.enums import KnowledgeSyncStatus
+from app.observability.logging import bind_log_context
 from app.schemas.case import CaseResponse, CaseSyncAcceptedResponse
 from app.schemas.error import ApiErrorResponse
 from app.services.cases import (
@@ -82,15 +83,16 @@ async def retry_case_sync(
             context={"alert_id": str(alert_id), "case_id": str(case.id)},
         ) from exc
     if should_dispatch:
-        try:
-            dispatcher.sync(case.id)
-        except Exception as exc:
-            raise ApiError(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                code="case_sync_dispatch_failed",
-                message="case retry was stored but task dispatch failed; retry is available",
-                context={"alert_id": str(alert_id), "case_id": str(case.id)},
-            ) from exc
+        with bind_log_context(alert_id=alert_id, case_id=case.id):
+            try:
+                dispatcher.sync(case.id)
+            except Exception as exc:
+                raise ApiError(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    code="case_sync_dispatch_failed",
+                    message="case retry was stored but task dispatch failed; retry is available",
+                    context={"alert_id": str(alert_id), "case_id": str(case.id)},
+                ) from exc
     return CaseSyncAcceptedResponse(
         case_id=case.id,
         status=(KnowledgeSyncStatus.PENDING if should_dispatch else case.knowledge_sync_status),

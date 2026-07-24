@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from time import monotonic
@@ -21,6 +22,8 @@ from app.schemas.workflow import (
     RootCauseItem,
 )
 from app.workflows.alert.state import ContextSnapshot
+
+logger = logging.getLogger(__name__)
 
 
 class DiagnosticModelProviderError(Exception):
@@ -312,6 +315,7 @@ class OpenAICompatibleDiagnosticModel:
     ) -> tuple[str, str | None]:
         started = monotonic()
         status = "error"
+        error_type: str | None = None
         try:
             async with self._client() as client:
                 payload = await self._request_json(
@@ -341,20 +345,36 @@ class OpenAICompatibleDiagnosticModel:
             return choice.message.content or "", choice.finish_reason
         except DiagnosticModelAuthenticationError:
             status = "authentication_error"
+            error_type = "DiagnosticModelAuthenticationError"
             raise
         except DiagnosticModelRequestError:
             status = "request_error"
+            error_type = "DiagnosticModelRequestError"
             raise
         except DiagnosticModelResponseError:
             status = "response_error"
+            error_type = "DiagnosticModelResponseError"
             raise
         finally:
+            duration_seconds = max(0.0, monotonic() - started)
             observe_llm_request(
                 provider=self.config.provider,
                 model=self.config.model,
                 operation=operation,
                 status=status,
-                duration_seconds=max(0.0, monotonic() - started),
+                duration_seconds=duration_seconds,
+            )
+            logger.log(
+                logging.ERROR if error_type else logging.INFO,
+                "llm.request.completed",
+                extra={
+                    "provider": self.config.provider,
+                    "model": self.config.model,
+                    "operation": operation,
+                    "status": status,
+                    "duration_ms": round(duration_seconds * 1000, 3),
+                    "error_type": error_type,
+                },
             )
 
     async def _request_json(

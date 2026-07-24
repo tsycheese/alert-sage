@@ -119,18 +119,20 @@ async def test_completed_workflow_dispatches_case_sync_task(
             actor="case-reviewer@example.com",
         )
 
-    dispatched: list[tuple[list[str], str]] = []
+    dispatched: list[tuple[list[str], str, dict[str, str]]] = []
 
-    def record_dispatch(*, args: list[str], task_id: str) -> None:
-        dispatched.append((args, task_id))
+    def record_dispatch(*, args: list[str], task_id: str, headers: dict[str, str]) -> None:
+        dispatched.append((args, task_id, headers))
 
     monkeypatch.setattr(case_tasks.run_case_sync, "apply_async", record_dispatch)
     _dispatch_case_sync(completed)
 
     assert completed.case_id is not None
-    assert dispatched == [
-        ([str(completed.case_id)], f"case-sync-{completed.case_id}"),
-    ]
+    assert dispatched[0][:2] == (
+        [str(completed.case_id)],
+        f"case-sync-{completed.case_id}",
+    )
+    assert dispatched[0][2] == {}
 
 
 @pytest.mark.asyncio

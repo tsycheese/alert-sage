@@ -12,6 +12,8 @@ import type { ReactElement } from "react";
 import type {
   HumanDecisionAction,
   KnowledgeSyncStatus,
+  WorkflowEventResponse,
+  WorkflowEventType,
   WorkflowRunStatus,
 } from "../../../api/generated";
 import {
@@ -52,6 +54,118 @@ const CASE_SYNC_COLORS: Record<KnowledgeSyncStatus, string> = {
   synced: "success",
   failed: "error",
 };
+const EVENT_LABELS: Record<WorkflowEventType, string> = {
+  workflow_queued: "工作流已入队",
+  workflow_started: "开始诊断",
+  node_started: "节点开始",
+  node_completed: "节点完成",
+  node_failed: "节点失败",
+  tool_started: "工具开始",
+  tool_completed: "工具完成",
+  tool_failed: "工具失败",
+  human_input_required: "等待人工确认",
+  human_decision_received: "收到人工决策",
+  workflow_completed: "诊断已完成",
+  workflow_rejected: "诊断建议已拒绝",
+  workflow_failed: "诊断执行失败",
+  case_created: "案例已生成",
+  case_sync_started: "知识库同步开始",
+  case_sync_succeeded: "知识库同步成功",
+  case_sync_failed: "知识库同步失败",
+};
+const NODE_LABELS: Record<string, string> = {
+  parse_alert: "解析告警",
+  classify_alert: "告警分类",
+  collect_context: "收集上下文",
+  diagnose: "分析根因",
+  recommend: "生成建议",
+  human_review: "人工确认",
+  finalize: "完成收尾",
+};
+
+function timelineColor(eventType: WorkflowEventType): string {
+  if (eventType.endsWith("failed")) return "red";
+  if (eventType === "workflow_completed" || eventType === "case_sync_succeeded") return "green";
+  if (eventType.includes("human_")) return "orange";
+  return "blue";
+}
+
+function eventDetail(event: WorkflowEventResponse): string | null {
+  const tool = typeof event.payload.tool_name === "string" ? event.payload.tool_name : null;
+  const action = typeof event.payload.action === "string" ? event.payload.action : null;
+  const attempt = typeof event.payload.attempt === "number" ? event.payload.attempt : null;
+  const parts = [
+    tool ? `工具：${tool}` : null,
+    action ? `决策：${action}` : null,
+    attempt ? `第 ${attempt} 次尝试` : null,
+  ].filter((value): value is string => Boolean(value));
+  return parts.length ? parts.join(" · ") : null;
+}
+
+function eventRequestId(event: WorkflowEventResponse): string | null {
+  const correlation = event.payload.correlation;
+  if (!correlation || typeof correlation !== "object") return null;
+  const requestId = (correlation as Record<string, unknown>).request_id;
+  return typeof requestId === "string" ? requestId : null;
+}
+
+function formatInterval(current: WorkflowEventResponse, previous?: WorkflowEventResponse): string | null {
+  if (!previous) return null;
+  const intervalMs = Date.parse(current.occurred_at) - Date.parse(previous.occurred_at);
+  if (!Number.isFinite(intervalMs) || intervalMs < 0) return null;
+  return intervalMs < 1000
+    ? `与上一事件间隔 ${intervalMs} ms`
+    : `与上一事件间隔 ${(intervalMs / 1000).toFixed(1)} s`;
+}
+
+function WorkflowTimeline({ events }: { events: WorkflowEventResponse[] }): ReactElement {
+  return (
+    <section className="workflow-timeline" aria-labelledby="workflow-timeline-title">
+      <Space wrap className="workflow-timeline-heading">
+        <Title level={4} id="workflow-timeline-title">诊断链路时间线</Title>
+        <Tag>{events.length} 个持久化事件</Tag>
+      </Space>
+      {events.length ? (
+        <Timeline
+          items={events.map((event, index) => {
+            const detail = eventDetail(event);
+            const requestId = eventRequestId(event);
+            const interval = formatInterval(event, events[index - 1]);
+            return {
+              key: event.id,
+              color: timelineColor(event.event_type),
+              content: (
+                <div className="workflow-timeline-event">
+                  <Space wrap size={6}>
+                    <Text strong>{event.sequence}. {EVENT_LABELS[event.event_type]}</Text>
+                    {event.node_name ? (
+                      <Tag>{NODE_LABELS[event.node_name] ?? event.node_name}</Tag>
+                    ) : null}
+                    {event.status ? <Tag variant="filled">{event.status}</Tag> : null}
+                  </Space>
+                  <div className="workflow-timeline-meta">
+                    <Text type="secondary">
+                      {new Date(event.occurred_at).toLocaleString("zh-CN", { hour12: false })}
+                    </Text>
+                    {interval ? <Text type="secondary">{interval}</Text> : null}
+                  </div>
+                  {detail ? <Text>{detail}</Text> : null}
+                  {requestId ? (
+                    <Text type="secondary" className="workflow-correlation-id">
+                      请求 {requestId}
+                    </Text>
+                  ) : null}
+                </div>
+              ),
+            };
+          })}
+        />
+      ) : (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无诊断事件" />
+      )}
+    </section>
+  );
+}
 
 interface WorkflowPanelProps {
   alertId: string;
@@ -93,7 +207,12 @@ export function WorkflowPanel({ alertId }: WorkflowPanelProps): ReactElement {
     const eventNames = [
       "workflow_queued",
       "workflow_started",
+      "node_started",
       "node_completed",
+      "node_failed",
+      "tool_started",
+      "tool_completed",
+      "tool_failed",
       "human_input_required",
       "human_decision_received",
       "workflow_completed",
@@ -341,14 +460,9 @@ export function WorkflowPanel({ alertId }: WorkflowPanelProps): ReactElement {
         />
       ) : null}
 
-      {eventsQuery.data?.items.length ? (
-        <Timeline
-          items={eventsQuery.data.items.map((event) => ({
-            key: event.id,
-            children: `${event.sequence}. ${event.event_type}${event.node_name ? ` · ${event.node_name}` : ""}`,
-          }))}
-        />
-      ) : null}
+      {eventsQuery.isPending ? <Spin size="small" description="加载诊断时间线" /> : null}
+      {eventsQuery.data ? <WorkflowTimeline events={eventsQuery.data.items} /> : null}
+      {eventsQuery.isError ? <Alert type="warning" showIcon title="诊断时间线加载失败" /> : null}
     </Space>
   );
 }

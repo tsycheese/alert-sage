@@ -233,6 +233,12 @@ React Router 使用声明式路由，页面模块按路由懒加载。TanStack Q
 
 `context` 仅携带调用方可安全使用的结构化信息；`422` 在 `context.issues` 中返回字段、消息和错误类型，不回显敏感原始输入。后端导出 `openapi/openapi.json`，前端使用固定版本的生成器生成 `frontend/src/api/generated`。生成文件不手工编辑，契约变化时必须先重新导出 OpenAPI，再生成类型并运行前后端测试。
 
+### 6.4 V2.4 日志关联与时间线
+
+API 为每个请求生成 UUID `request_id`，在响应 `X-Request-ID` 中返回；调用方可另传经过白名单校验的 `X-Client-Request-ID`。启动、恢复、重试和案例同步任务通过 Celery headers 传播关联上下文，Worker 再从 PostgreSQL 补齐告警、运行、线程和案例 ID。API、Worker、LangGraph 节点、上下文工具、DeepSeek 与 Dify 使用同一 JSON 字段契约。
+
+日志只写容器标准输出，是可丢失的运行态数据；`workflow_events` 仍是时间线、审计与 SSE 补发的业务事实。新事件在 `payload.correlation` 中保存产生它的请求 ID，页面据此展示跨请求阶段。相邻事件的时间差只代表阶段间隔，不能代替节点精确耗时；精确耗时由结构化日志和 Prometheus Histogram 提供。当前不引入 Loki、Elasticsearch 或 OpenTelemetry Collector。
+
 ## 7. 建议目录结构
 
 ```text
@@ -297,7 +303,7 @@ V2.3 已提供以下指标族：
 - 知识服务：Dify/Mock 检索与发布的结果、耗时及检索片段数量。
 - 案例同步：按知识供应商和同步终态记录任务总数与耗时。
 
-Dashboard 展示 API 速率/P95、工作流和节点 P95、工具 P95、LLM 与知识服务 P95、Worker 进程累计模型成功率、重试、输出修复及案例同步失败。结构化日志关联 ID 和单次诊断可视化时间线仍属于后续范围，不能由聚合指标替代。
+Dashboard 展示 API 速率/P95、工作流和节点 P95、工具 P95、LLM 与知识服务 P95、Worker 进程累计模型成功率、重试、输出修复及案例同步失败。V2.4 已补充结构化日志关联 ID 和以 PostgreSQL 审计事件为事实来源的单次诊断可视化时间线；二者与聚合指标互补，不能相互替代。
 
 ## 9. 可靠性约束
 

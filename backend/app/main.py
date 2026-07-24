@@ -12,7 +12,8 @@ from app.core.config import get_settings
 from app.core.errors import ApiError
 from app.core.exception_handlers import api_error_handler, validation_error_handler
 from app.db.session import engine
-from app.observability.http import PrometheusMetricsMiddleware
+from app.observability.http import PrometheusMetricsMiddleware, RequestObservabilityMiddleware
+from app.observability.logging import configure_logging
 
 
 @asynccontextmanager
@@ -23,6 +24,11 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    configure_logging(
+        service="alert-sage-api",
+        environment=settings.environment,
+        level=settings.log_level,
+    )
     application = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
@@ -35,9 +41,11 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["X-Request-ID"],
     )
     if settings.metrics_enabled:
         application.add_middleware(PrometheusMetricsMiddleware)
+    application.add_middleware(RequestObservabilityMiddleware)
     application.add_exception_handler(ApiError, api_error_handler)
     application.add_exception_handler(RequestValidationError, validation_error_handler)
     application.include_router(api_router, prefix=settings.api_v1_prefix)

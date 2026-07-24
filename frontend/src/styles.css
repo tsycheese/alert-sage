@@ -381,6 +381,40 @@ a {
   margin-top: 12px;
 }
 
+.workflow-panel .workflow-timeline {
+  padding: 16px 16px 4px;
+  border: 1px solid #dbe5f1;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.workflow-panel .workflow-timeline-heading {
+  margin-bottom: 12px;
+}
+
+.workflow-panel .workflow-timeline-heading .ant-typography {
+  margin: 0;
+}
+
+.workflow-panel .workflow-timeline-event {
+  display: grid;
+  gap: 5px;
+  padding-bottom: 8px;
+}
+
+.workflow-panel .workflow-timeline-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.workflow-panel .workflow-correlation-id {
+  overflow-wrap: anywhere;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+}
+
 .detail-skeleton {
   min-height: 420px;
 }

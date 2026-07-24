@@ -1,6 +1,8 @@
 from celery import Celery
+from celery.signals import setup_logging
 
 from app.core.config import get_settings
+from app.observability.logging import configure_logging
 from app.observability.worker import configure_worker_metrics
 
 settings = get_settings()
@@ -22,3 +24,13 @@ celery_app.conf.update(
     enable_utc=True,
 )
 configure_worker_metrics()
+
+
+@setup_logging.connect(weak=False)
+def configure_worker_logging(**_: object) -> None:
+    worker_settings = get_settings()
+    configure_logging(
+        service="alert-sage-worker",
+        environment=worker_settings.environment,
+        level=worker_settings.log_level,
+    )

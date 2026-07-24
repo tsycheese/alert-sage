@@ -71,6 +71,7 @@ class WorkflowExecutionResult:
 class PreparedWorkflowRun:
     workflow_run_id: UUID
     alert_id: UUID
+    thread_id: str
     created: bool
 
 
@@ -106,6 +107,7 @@ class AlertWorkflowService:
         return PreparedWorkflowRun(
             workflow_run_id=run.id,
             alert_id=run.alert_id,
+            thread_id=run.thread_id,
             created=created,
         )
 

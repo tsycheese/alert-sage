@@ -63,6 +63,12 @@ async def test_workflow_api_runs_to_human_decision(
     assert replayed.json()["dispatched"] is False
     assert fake_dispatcher.starts == [UUID(started.json()["workflow_run_id"])]
 
+    queued_events = await api_client.get(f"/api/v1/alerts/{alert_id}/events")
+    assert queued_events.status_code == 200
+    assert queued_events.json()["items"][0]["payload"]["correlation"]["request_id"] == (
+        started.headers["X-Request-ID"]
+    )
+
     run_id = fake_dispatcher.starts[0]
     async with open_alert_workflow_service(
         session_factory=isolated_test_database.session_factory,

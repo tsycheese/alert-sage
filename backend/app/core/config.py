@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     environment: Literal["development", "test", "production"] = "development"
     debug: bool = False
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     api_v1_prefix: str = "/api/v1"
     database_url: str = "postgresql+psycopg://alert_sage:alert_sage@localhost:5432/alert_sage"
     test_database_url: str | None = None
