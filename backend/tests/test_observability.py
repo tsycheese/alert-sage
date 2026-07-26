@@ -24,6 +24,7 @@ from app.observability.metrics import label_value
 from app.observability.nodes import observed_node
 from app.services.cases import CaseSyncResult
 from app.tasks import cases as case_tasks
+from app.tasks import evaluations as evaluation_tasks
 from app.tasks import workflows as workflow_tasks
 from app.tasks.dispatcher import CeleryOutboxPublisher
 from scripts.run_worker import prepare_multiprocess_directory
@@ -161,6 +162,36 @@ def test_outbox_publisher_propagates_whitelisted_celery_headers(
     assert captured["task_id"] == f"outbox-{message_id}"
     restored = correlation_from_celery_headers(headers)
     assert restored["request_id"] == request_id
+
+
+def test_outbox_publisher_dispatches_rag_evaluation_with_correlation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def record_dispatch(**kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(evaluation_tasks.run_rag_evaluation, "apply_async", record_dispatch)
+    run_id = UUID("90000000-0000-4000-8000-000000000009")
+    message_id = UUID("91000000-0000-4000-8000-000000000009")
+    CeleryOutboxPublisher().publish(
+        OutboxMessage(
+            id=message_id,
+            topic=OutboxTopic.RAG_EVALUATION_RUN,
+            aggregate_id=run_id,
+            idempotency_key=f"rag-evaluation:run:{run_id}",
+            payload={"rag_evaluation_run_id": str(run_id)},
+            correlation={"rag_evaluation_run_id": str(run_id)},
+        )
+    )
+
+    assert captured["args"] == [str(run_id)]
+    assert captured["task_id"] == f"outbox-{message_id}"
+    headers = captured["headers"]
+    assert isinstance(headers, dict)
+    restored = correlation_from_celery_headers(headers)
+    assert restored["rag_evaluation_run_id"] == str(run_id)
 
 
 @pytest.mark.asyncio

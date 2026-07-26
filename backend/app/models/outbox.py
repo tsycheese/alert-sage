@@ -26,7 +26,8 @@ class OutboxMessage(Base):
     __table_args__ = (
         UniqueConstraint("idempotency_key", name="outbox_messages_idempotency_key"),
         CheckConstraint(
-            "topic IN ('workflow.start', 'workflow.resume', 'workflow.retry', 'case.sync')",
+            "topic IN ('workflow.start', 'workflow.resume', 'workflow.retry', 'case.sync', "
+            "'rag.evaluation.run')",
             name="topic_values",
         ),
         CheckConstraint(

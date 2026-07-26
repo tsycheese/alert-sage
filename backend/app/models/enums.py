@@ -79,3 +79,16 @@ class OutboxTopic(StrEnum):
     WORKFLOW_RESUME = "workflow.resume"
     WORKFLOW_RETRY = "workflow.retry"
     CASE_SYNC = "case.sync"
+    RAG_EVALUATION_RUN = "rag.evaluation.run"
+
+
+class RagEvaluationRunStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class RagEvaluationSplit(StrEnum):
+    CALIBRATION = "calibration"
+    TEST = "test"

@@ -17,6 +17,7 @@ CORRELATION_FIELDS = (
     "workflow_run_id",
     "thread_id",
     "case_id",
+    "rag_evaluation_run_id",
     "outbox_message_id",
 )
 CONTEXT_FIELDS = (*CORRELATION_FIELDS, "task_id")
@@ -72,6 +73,7 @@ def normalize_context(fields: Mapping[str, object]) -> dict[str, str]:
             "alert_id",
             "workflow_run_id",
             "case_id",
+            "rag_evaluation_run_id",
             "outbox_message_id",
         }:
             safe_value = _as_uuid(value)

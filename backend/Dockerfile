@@ -15,6 +15,7 @@ RUN uv sync --frozen --no-dev
 COPY alembic.ini ./
 COPY migrations ./migrations
 COPY app ./app
+COPY evaluation_sets ./evaluation_sets
 COPY scripts ./scripts
 
 RUN addgroup --system alert-sage \

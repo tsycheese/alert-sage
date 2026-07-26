@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable
 from statistics import fmean
+from typing import Literal
 from uuid import UUID
 
 from app.evaluation.schemas import (
@@ -124,6 +125,7 @@ def evaluate_retrieval(
     observations: list[RetrievalObservation],
     *,
     top_k: int,
+    split: Literal["calibration", "test"] | None = None,
 ) -> RagEvaluationReport:
     if top_k < 1 or top_k > 10:
         raise ValueError("top_k must be between 1 and 10")
@@ -136,7 +138,10 @@ def evaluate_retrieval(
             )
         observation_by_query[observation.query_id] = observation
 
-    query_ids = {query.id for query in evaluation_set.queries}
+    selected_queries = [
+        query for query in evaluation_set.queries if split is None or query.split == split
+    ]
+    query_ids = {query.id for query in selected_queries}
     observed_ids = set(observation_by_query)
     missing = query_ids - observed_ids
     unknown = observed_ids - query_ids
@@ -150,8 +155,9 @@ def evaluate_retrieval(
 
     query_metrics = [
         _score_query(query, observation_by_query[query.id], top_k=top_k)
-        for query in evaluation_set.queries
+        for query in selected_queries
     ]
+    selected_splits = (split,) if split is not None else ("calibration", "test")
     return RagEvaluationReport(
         evaluation_set_id=evaluation_set.id,
         evaluation_set_version=evaluation_set.version,
@@ -159,7 +165,7 @@ def evaluate_retrieval(
         overall=_aggregate(query_metrics),
         by_split={
             split: _aggregate([item for item in query_metrics if item.split == split])
-            for split in ("calibration", "test")
+            for split in selected_splits
         },
         queries=query_metrics,
     )

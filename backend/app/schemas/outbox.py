@@ -26,3 +26,9 @@ class CaseSyncMessage(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     case_id: UUID
+
+
+class RagEvaluationRunMessage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rag_evaluation_run_id: UUID

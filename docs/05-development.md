@@ -26,6 +26,7 @@ Copy-Item .env.example .env
 ALERT_SAGE_KNOWLEDGE_PROVIDER=dify
 ALERT_SAGE_DIFY_BASE_URL=https://api.dify.ai/v1
 ALERT_SAGE_DIFY_DATASET_ID=<知识库 UUID>
+ALERT_SAGE_DIFY_EVALUATION_DATASET_ID=<独立评测知识库 UUID>
 ALERT_SAGE_DIFY_API_KEY=<Knowledge Service API Key>
 ALERT_SAGE_DIFY_HTTP_TIMEOUT_SECONDS=15
 ALERT_SAGE_DIFY_POLL_INTERVAL_SECONDS=2
@@ -36,7 +37,47 @@ API Key 只放在本地 `.env` 或部署平台的密钥系统中，不写入命�
 
 全空数据集在首个文档创建前可能因 Dify 尚未建立底层 Collection 而暂时无法检索，Alert Sage 会把该情况映射为脱敏 `503`，工作流则按单工具失败降级继续。批准第一条报告并完成案例索引后，检索恢复正常。
 
-### 2.2 DeepSeek 诊断模型
+业务知识库和评测知识库必须使用不同 Dataset。固定评测语料只允许发布到 `ALERT_SAGE_DIFY_EVALUATION_DATASET_ID`，评测检索也只读取该 Dataset，避免合成案例污染业务问答。两个 Dataset 共用同一 Knowledge Service API Key，但建议使用相同 Embedding 模型和索引配置，确保比较条件一致。
+
+发布或刷新 6 份固定评测文档：
+
+```powershell
+Set-Location backend
+uv run python -m scripts.publish_evaluation_corpus
+```
+
+脚本按稳定案例 UUID 查找文档；已完成索引的同名文档会更新并重新索引，因此评测集内容升级后不需要手工删除旧文档。脚本只输出文档数量和外部文档 ID，不输出 API Key。
+
+### 2.2 RAG 评测运行
+
+评测运行通过 API 创建，并由 Outbox Relay 投递给 Celery Worker：
+
+```powershell
+$body = @{
+  idempotency_key = "rag-calibration-1.0.0-top3"
+  split = "calibration"
+  top_k = 3
+  score_threshold = $null
+} | ConvertTo-Json
+
+$run = Invoke-RestMethod `
+  -Method Post `
+  -Uri http://localhost:18000/api/v1/rag/evaluations/runs `
+  -ContentType application/json `
+  -Body $body
+
+Invoke-RestMethod http://localhost:18000/api/v1/rag/evaluations/runs/$($run.run.id)
+```
+
+`test` split 还必须传入 `confirm_test_set=true`。同一幂等键配合同一参数返回已有运行；复用幂等键但修改参数返回 `409`。`ALERT_SAGE_RAG_EVALUATION_LOCK_TTL_SECONDS` 控制同一运行的 Redis 短期互斥锁，PostgreSQL 中的运行状态和唯一约束仍是最终事实来源。
+
+Dify Cloud 评测默认使用 `ALERT_SAGE_RAG_EVALUATION_QUERY_INTERVAL_SECONDS=6.5` 控制相邻查询间隔，避免短时间批量检索触发 Cloud 配额后把限流误计为质量错误。该设置只影响离线评测 Worker，不影响业务知识检索 API 和告警诊断。自托管或更高配额环境可以降低该值，但必须先用 calibration 验证 `error_rate` 仍为 0。
+
+部署或本地构建时应将当前 Git 提交 SHA 写入 `ALERT_SAGE_BUILD_REVISION`。该值会随评测运行持久化；留空不会阻止运行，但会降低代码版本审计能力。
+
+固定顺序是：先发布语料，只查看 calibration 并选择参数，固定候选方案后再执行一次 test。查看 test 后继续调参会污染保留集，需要提升评测集版本并补充新的 test 问题。
+
+### 2.3 DeepSeek 诊断模型
 
 离线开发保持 `ALERT_SAGE_DIAGNOSTIC_MODEL_PROVIDER=mock`。启用真实诊断时，在根目录 `.env` 中设置：
 
@@ -58,7 +99,7 @@ ALERT_SAGE_DIAGNOSTIC_MODEL_THINKING_ENABLED=false
 
 后端集成测试读取 `ALERT_SAGE_TEST_DATABASE_URL`，缺省时复用开发数据库连接，但只在随机命名的临时 Schema 中建表。每项测试结束后会删除对应 Schema，不会清空开发业务表。
 
-### 2.3 可观测性
+### 2.4 可观测性
 
 `.env.example` 默认启用指标并保留冲突较少的宿主机端口：
 
@@ -74,7 +115,7 @@ API 指标位于 `http://localhost:18000/metrics`，Worker multiprocess 指标�
 
 API 与 Worker 默认输出单行 JSON 日志。每个 API 响应包含服务端生成的 `X-Request-ID`；若需要和调用方日志对齐，可传 `X-Client-Request-ID`，不要尝试覆盖 `X-Request-ID`。排障时可按 `request_id`、`alert_id`、`workflow_run_id`、`thread_id` 或 `case_id` 搜索容器日志。日志不会记录原始告警 payload、Prompt、检索 query、模型响应或供应商响应体。
 
-### 2.4 Outbox Relay
+### 2.5 Outbox Relay
 
 V2.5 默认每五秒唤醒一次 Relay，每批最多发布 50 条消息，发布失败按 2 秒起步、最多 60 秒的指数退避重试：
 

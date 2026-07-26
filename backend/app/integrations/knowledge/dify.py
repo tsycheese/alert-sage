@@ -40,6 +40,7 @@ class DifyKnowledgeConfig:
     http_timeout_seconds: float = 15.0
     poll_interval_seconds: float = 2.0
     max_retries: int = 2
+    refresh_completed_documents: bool = False
 
 
 class _DifyModel(BaseModel):
@@ -103,7 +104,15 @@ class DifyKnowledgeAdapter(CasePublisher, KnowledgeRetriever):
             existing = await self._find_document(client, document_name)
             if existing is not None:
                 if existing.indexing_status == "completed":
-                    return existing.id
+                    if not self.config.refresh_completed_documents:
+                        return existing.id
+                    await self._update_document(
+                        client,
+                        existing.id,
+                        document_name,
+                        document_text,
+                    )
+                    return await self._wait_until_indexed(client, existing.id)
                 if existing.indexing_status in self._terminal_failures:
                     await self._update_document(client, existing.id, document_name, document_text)
                 return await self._wait_until_indexed(client, existing.id)

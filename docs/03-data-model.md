@@ -1,6 +1,6 @@
 # 核心数据模型
 
-> 实现状态：V2.5 已将告警、工作流、人工确认、结构化案例、知识同步状态和可靠投递意图接入 PostgreSQL、API、Celery Worker、Relay、SSE 与 Web。
+> 实现状态：V2.6B 已将告警、工作流、人工确认、结构化案例、知识同步状态、可靠投递意图和 RAG 评测运行接入 PostgreSQL、API、Celery Worker、Relay、SSE 与 Web。
 
 ## 1. 建模目标
 
@@ -274,7 +274,7 @@ failed
 
 ### 3.8 `outbox_messages`
 
-Outbox 保存已经随业务事务提交、但尚未确认发布到 Celery Broker 的内部消息。允许的 `topic` 只有 `workflow.start`、`workflow.resume`、`workflow.retry` 和 `case.sync`；`payload` 在发布前必须通过对应的严格 Pydantic Schema。
+Outbox 保存已经随业务事务提交、但尚未确认发布到 Celery Broker 的内部消息。允许的 `topic` 只有 `workflow.start`、`workflow.resume`、`workflow.retry`、`case.sync` 和 `rag.evaluation.run`；`payload` 在发布前必须通过对应的严格 Pydantic Schema。
 
 核心字段：
 
@@ -286,6 +286,23 @@ Outbox 保存已经随业务事务提交、但尚未确认发布到 Celery Broke
 - `published_at`、`last_error_type`：记录发布结果；错误正文、密钥和供应商响应不得入库。
 
 Relay 按 `available_at, created_at` 读取 `pending` 消息，并使用部分索引和 `FOR UPDATE SKIP LOCKED` 支持并发领取。消息发布和标记 `published` 之间仍可能发生进程崩溃，因此该表保证投递意图不丢失，不保证严格一次消费。
+
+### 3.9 `rag_evaluation_runs` 与 `rag_evaluation_results`
+
+`rag_evaluation_runs` 保存一次可复现的检索评测运行。仓库中的严格 JSON 文件仍是评测集事实来源；运行行只固化评测集 ID、版本、SHA-256、可选构建 revision、供应商、独立 Dataset ID、split、TopK、分数阈值、状态和汇总指标。
+
+运行状态为：
+
+```text
+queued -> running -> completed
+                  -> failed
+```
+
+`idempotency_key` 全局唯一；创建运行和 `rag.evaluation.run` Outbox 意图在同一事务提交。Worker 重复收到已完成运行时直接返回，不重复检索或写入结果；失败重试会清理该运行未完成的旧结果并增加 `attempt`。
+
+`rag_evaluation_results` 每个问题一行，以 `UNIQUE(run_id, query_id)` 防止重复结果，保存问题、标准相关案例、归一化检索条目、逐题命中指标、拒答判断、延迟和脱敏错误码。检索条目只保存文档/片段标识、案例 UUID、排名、分数和来源，不保存 Cloud 返回的片段正文。
+
+两张表分离的目的是支持按问题、难度和失败类型查询及后续 Web 对比，避免把全部逐题结果塞入一个不可维护的 JSONB 大对象。详细决策见 ADR 0011。
 
 ## 4. LangGraph 状态
 
@@ -356,6 +373,6 @@ Celery 和 Redis 状态不可用于判断告警最终是否完成。
 以下模型在第一版闭环稳定后再加入：
 
 - `knowledge_documents`、`knowledge_chunks`：自研 pgvector 检索。
-- `rag_evaluation_sets`、`rag_evaluation_results`：检索效果评测。
+- `rag_evaluation_sets`：如未来需要在线管理评测集，再评估是否从 Git 事实来源迁移。
 - `users`、`roles`：真实认证与权限。
 - `alert_groups`：告警聚合与抑制。

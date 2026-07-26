@@ -30,16 +30,20 @@ class Settings(BaseSettings):
     outbox_retry_base_seconds: float = Field(default=2.0, gt=0, le=300)
     outbox_retry_max_seconds: float = Field(default=60.0, gt=0, le=3600)
     workflow_lock_ttl_seconds: int = 300
+    rag_evaluation_lock_ttl_seconds: int = Field(default=1800, ge=60, le=7200)
+    rag_evaluation_query_interval_seconds: float = Field(default=6.5, ge=0, le=60)
     workflow_event_poll_seconds: float = 2.0
     metrics_enabled: bool = True
     worker_metrics_port: int = Field(default=9101, ge=1, le=65_535)
     workflow_tool_timeout_seconds: float = Field(default=10.0, gt=0)
     case_sync_timeout_seconds: float = Field(default=180.0, gt=0)
     knowledge_retrieval_timeout_seconds: float = Field(default=15.0, gt=0)
+    rag_evaluation_set_path: str = "evaluation_sets/rag-v2.6-baseline.json"
     knowledge_provider: Literal["mock", "dify"] = "mock"
     dify_base_url: str = "https://api.dify.ai/v1"
     dify_api_key: SecretStr | None = None
     dify_dataset_id: str | None = None
+    dify_evaluation_dataset_id: str | None = None
     dify_http_timeout_seconds: float = Field(default=15.0, gt=0)
     dify_poll_interval_seconds: float = Field(default=2.0, gt=0)
     dify_max_retries: int = Field(default=2, ge=0, le=5)
@@ -52,6 +56,7 @@ class Settings(BaseSettings):
     diagnostic_model_max_tokens: int = Field(default=3000, ge=512, le=32_768)
     diagnostic_model_temperature: float = Field(default=0.1, ge=0, le=2)
     diagnostic_model_thinking_enabled: bool = False
+    build_revision: str | None = None
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 
     @model_validator(mode="after")
@@ -84,6 +89,11 @@ class Settings(BaseSettings):
             UUID(self.dify_dataset_id)
         except ValueError as exc:
             raise ValueError("ALERT_SAGE_DIFY_DATASET_ID must be a UUID") from exc
+        if self.dify_evaluation_dataset_id:
+            try:
+                UUID(self.dify_evaluation_dataset_id)
+            except ValueError as exc:
+                raise ValueError("ALERT_SAGE_DIFY_EVALUATION_DATASET_ID must be a UUID") from exc
         return self
 
 

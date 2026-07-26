@@ -8,6 +8,7 @@ from app.observability.logging import (
 )
 from app.schemas.outbox import (
     CaseSyncMessage,
+    RagEvaluationRunMessage,
     WorkflowResumeMessage,
     WorkflowRetryMessage,
     WorkflowStartMessage,
@@ -58,7 +59,7 @@ class CeleryOutboxPublisher:
                     headers=headers,
                 )
                 aggregate_context = {"workflow_run_id": str(payload.workflow_run_id)}
-            else:
+            elif topic is OutboxTopic.CASE_SYNC:
                 from app.tasks.cases import run_case_sync
 
                 payload = CaseSyncMessage.model_validate(message.payload)
@@ -68,6 +69,18 @@ class CeleryOutboxPublisher:
                     headers=headers,
                 )
                 aggregate_context = {"case_id": str(payload.case_id)}
+            elif topic is OutboxTopic.RAG_EVALUATION_RUN:
+                from app.tasks.evaluations import run_rag_evaluation
+
+                payload = RagEvaluationRunMessage.model_validate(message.payload)
+                run_rag_evaluation.apply_async(
+                    args=[str(payload.rag_evaluation_run_id)],
+                    task_id=task_id,
+                    headers=headers,
+                )
+                aggregate_context = {"rag_evaluation_run_id": str(payload.rag_evaluation_run_id)}
+            else:  # pragma: no cover - exhaustive guard for future enum members
+                raise ValueError(f"unsupported outbox topic: {topic}")
 
             logger.info(
                 "celery.task.dispatched",

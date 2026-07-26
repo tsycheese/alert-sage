@@ -11,7 +11,7 @@ V2.6 的目标不是增加另一个“看起来能搜索”的页面，而是用
 - 检索供应商失败是否被单独统计，而不是伪装成正确拒答。
 - 不同 TopK 和分数阈值相对固定基线是提升还是退化。
 
-V2.6A 只建立版本化评测契约、固定评测集和确定性指标计算器，不修改生产数据库、API、页面、Dify 数据集或核心工作流。V2.6B 再增加语料发布、异步运行和结果持久化；V2.6C 增加 Web 对比报告。
+V2.6A 建立版本化评测契约、固定评测集和确定性指标计算器。V2.6B 增加独立语料发布、异步运行、结果持久化与查询 API；V2.6C 增加 Web 对比报告。核心告警工作流不依赖评测功能。
 
 第一阶段不使用 LLM-as-a-Judge。LLM 评分存在费用、波动和自我偏好，不能替代有明确相关性标签的检索评测。`expected_answer_points` 先作为后续回答与引用评测的事实标签，V2.6A 不对其自动打分。
 
@@ -104,12 +104,66 @@ V2.6B 首次 Dify 基线的暂定 test 目标：
 
 阈值在首次 test 运行前固定。当前样本较小，结果只能用于工程回归和方案对比，不能宣称具有统计代表性。
 
-## 7. 下一阶段设计输入
+## 7. V2.6B 运行设计
 
-V2.6B 需要在实施前评审以下重大变更：
+V2.6B 采用以下实现：
 
 - 使用固定案例 UUID 将 6 份评测文档发布到独立 Dify 评测数据集，避免污染业务知识库。
 - 新增 `rag_evaluation_runs` 和 `rag_evaluation_results`，保存数据版本、Git revision、文件哈希、检索参数、逐题结果和汇总指标。
 - 为 Outbox 增加严格的 `rag.evaluation.run` 主题，通过 Celery 异步执行，不让 HTTP 请求等待 Cloud 检索。
-- 只允许 calibration 运行用于参数调优；test 运行需要显式标记，避免无意反复查看保留集。
-- Web 第一版只读展示运行列表、核心指标、参数差异和失败问题，不建设在线编辑器。
+- calibration 可直接创建；test 运行需要 `confirm_test_set=true`，避免无意反复查看保留集。
+- `POST /api/v1/rag/evaluations/runs` 创建或幂等返回运行，列表和详情 API 提供汇总与逐题结果。
+- 评测集文件在排队和执行之间发生变化时运行失败，避免把新语料结果错误归到旧哈希。
+- 单题超时或 Dify 错误记录为脱敏错误码并计入 `error_rate`，不会伪装为正确拒答。
+- Cloud 评测查询按可配置间隔顺序执行，避免批量调用配额污染质量指标；业务检索不节流。
+- Worker 只保存归一化文档标识、排名、分数和来源，不持久化检索片段正文。
+
+两表方案、独立 Dataset 和异步边界的选择记录在 ADR 0011。Web 第一版仍只读展示运行列表、核心指标、参数差异和失败问题，不建设在线评测集编辑器。
+
+## 8. API 与状态语义
+
+```text
+POST /api/v1/rag/evaluations/runs
+GET  /api/v1/rag/evaluations/runs
+GET  /api/v1/rag/evaluations/runs/{run_id}
+```
+
+创建响应的 `dispatched=true` 只表示本次事务新建了 Outbox 投递意图，不表示 Worker 已开始或完成。运行状态以 PostgreSQL 为准：`queued`、`running`、`completed`、`failed`。同一运行重复消费不会重复执行已完成结果；失败任务可由 Celery 重试，`attempt` 记录实际执行次数。
+
+真实基线验收顺序：
+
+1. 向独立评测 Dataset 发布/刷新 6 份固定文档并等待索引完成。
+2. 运行 calibration Top3 基线，检查错误率、命中、拒答和延迟。
+3. 只依据 calibration 决定是否调整分数阈值或 TopK。
+4. 固定参数和本节成功阈值后，显式确认并运行一次 test。
+5. 将运行 ID、评测集哈希、构建 revision 和结果写入本节验收记录。
+
+## 9. 2026-07-26 Dify Cloud 基线
+
+固定评测集 `1.0.0` 的 6 份文档已发布到独立 Dataset，文件 SHA-256 为 `f9ad6fa91c0c231985884081d1427dffeb85f32cb352268c865fa3b3e9ae02a6`。
+
+首次无节流 calibration 运行 `15aa801d-d613-4b24-8219-8f95d08f6fbc` 的前 10 题成功，第 11、12 题被 Cloud 以 403 拒绝；稍后单独重试同一问题成功，运行证据表明短时批量配额而非凭据失效。评测 Worker 因此增加 6.5 秒查询间隔。节流后无阈值运行 `5ebf1360-0d53-4244-ae82-250c04cee4e4` 的错误率降为 0，但两条无答案问题均误命中。
+
+calibration 的无答案 Top1 最高分为 0.2537，有答案最低分为 0.4727。选择阈值 0.40，在两组之间保留双向余量。确认运行 `75f4fff5-9e4f-46df-8e86-1d679e318da2` 的结果：
+
+| 参数/指标 | 结果 |
+| --- | ---: |
+| split / TopK / threshold | calibration / 3 / 0.40 |
+| source hit rate / Recall@3 / MRR@3 | 1.0000 / 1.0000 / 1.0000 |
+| abstention accuracy / false positive rate | 1.0000 / 0.0000 |
+| provider error rate | 0.0000 |
+| P50 / P95 | 673 ms / 2028 ms |
+
+固定参数和本页目标后，只执行一次 test。运行 `3685a5d7-656d-4c28-8cd7-d1e275a839ad` 的结果：
+
+| 参数/指标 | 结果 |
+| --- | ---: |
+| split / TopK / threshold | test / 3 / 0.40 |
+| source hit rate / Recall@3 / MRR@3 | 1.0000 / 1.0000 / 0.9167 |
+| abstention accuracy / false positive rate | 1.0000 / 0.0000 |
+| provider error rate | 0.0000 |
+| P50 / P95 | 938 ms / 2128 ms |
+
+6 个有答案 test 问题中 5 个相关案例排名第 1，`test-checkout-vague` 排名第 2；两条无答案问题均返回空结果。结果超过预先固定的 80% Top3 命中、0.65 MRR、0 错误和 50% 拒答准确率目标，但样本规模仍只适合工程回归。
+
+本次运行未注入 `ALERT_SAGE_BUILD_REVISION`，数据库中的构建 revision 为空；运行 ID、参数和评测集哈希完整保存。后续基线必须注入提交 SHA，且本次 test 结果不得继续用于调参。

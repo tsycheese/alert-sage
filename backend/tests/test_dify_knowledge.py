@@ -40,6 +40,21 @@ def dify_adapter(handler: httpx.MockTransport) -> DifyKnowledgeAdapter:
     )
 
 
+def refreshing_dify_adapter(handler: httpx.MockTransport) -> DifyKnowledgeAdapter:
+    return DifyKnowledgeAdapter(
+        DifyKnowledgeConfig(
+            base_url="https://api.dify.test/v1",
+            api_key="dataset-test-secret",
+            dataset_id=DATASET_ID,
+            http_timeout_seconds=1,
+            poll_interval_seconds=0.001,
+            max_retries=1,
+            refresh_completed_documents=True,
+        ),
+        transport=handler,
+    )
+
+
 def case_document() -> CaseDocument:
     from uuid import UUID
 
@@ -125,6 +140,57 @@ async def test_dify_publisher_reuses_completed_document() -> None:
 
     assert document_id == DOCUMENT_ID
     assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_dify_evaluation_publisher_refreshes_completed_document() -> None:
+    methods: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        methods.append(request.method)
+        if request.method == "GET" and request.url.path.endswith("/documents"):
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "id": DOCUMENT_ID,
+                            "name": "alert-sage-case-bfead97e-13a5-5ae3-8c12-231555bf6dd3.md",
+                            "indexing_status": "completed",
+                        }
+                    ]
+                },
+            )
+        if request.method == "POST" and request.url.path.endswith("/update-by-text"):
+            body = json.loads(request.content)
+            assert body["name"].startswith("alert-sage-case-")
+            return httpx.Response(
+                200,
+                json={
+                    "document": {
+                        "id": DOCUMENT_ID,
+                        "name": body["name"],
+                        "indexing_status": "waiting",
+                    },
+                    "batch": "batch-refresh-001",
+                },
+            )
+        if request.method == "GET" and request.url.path.endswith(f"/documents/{DOCUMENT_ID}"):
+            return httpx.Response(
+                200,
+                json={
+                    "id": DOCUMENT_ID,
+                    "name": "alert-sage-case-bfead97e-13a5-5ae3-8c12-231555bf6dd3.md",
+                    "indexing_status": "completed",
+                },
+            )
+        raise AssertionError(f"unexpected request: {request.method} {request.url}")
+
+    adapter = refreshing_dify_adapter(httpx.MockTransport(handler))
+    document_id = await adapter.publish(case_document(), idempotency_key="evaluation:refresh")
+
+    assert document_id == DOCUMENT_ID
+    assert methods == ["GET", "POST", "GET"]
 
 
 @pytest.mark.asyncio
@@ -298,6 +364,17 @@ def test_dify_settings_require_secret_and_valid_dataset_id() -> None:
         dify_dataset_id=DATASET_ID,
     )
     assert "dataset-secret" not in repr(settings)
+
+
+def test_dify_settings_validate_evaluation_dataset_id() -> None:
+    with pytest.raises(ValidationError, match="DIFY_EVALUATION_DATASET_ID must be a UUID"):
+        Settings(
+            _env_file=None,
+            knowledge_provider="dify",
+            dify_api_key="dataset-secret",
+            dify_dataset_id=DATASET_ID,
+            dify_evaluation_dataset_id="not-a-uuid",
+        )
 
 
 @dataclass

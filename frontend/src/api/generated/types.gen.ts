@@ -313,6 +313,16 @@ export type DiagnosisReportResponse = {
 };
 
 /**
+ * HTTPValidationError
+ */
+export type HttpValidationError = {
+    /**
+     * Detail
+     */
+    detail?: Array<ValidationError>;
+};
+
+/**
  * HealthResponse
  */
 export type HealthResponse = {
@@ -461,6 +471,278 @@ export type KnowledgeSearchResponse = {
  * KnowledgeSyncStatus
  */
 export type KnowledgeSyncStatus = 'pending' | 'syncing' | 'synced' | 'failed';
+
+/**
+ * RagEvaluationAcceptedResponse
+ */
+export type RagEvaluationAcceptedResponse = {
+    /**
+     * Dispatched
+     *
+     * Whether this request created a new durable Outbox delivery intent.
+     */
+    dispatched: boolean;
+    run: RagEvaluationRunResponse;
+};
+
+/**
+ * RagEvaluationDetailResponse
+ */
+export type RagEvaluationDetailResponse = {
+    /**
+     * Results
+     */
+    results: Array<RagEvaluationResultResponse>;
+    run: RagEvaluationRunResponse;
+};
+
+/**
+ * RagEvaluationResultResponse
+ */
+export type RagEvaluationResultResponse = {
+    /**
+     * Abstention Correct
+     */
+    abstention_correct: boolean | null;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Difficulty
+     */
+    difficulty: string;
+    /**
+     * Error Code
+     */
+    error_code: string | null;
+    /**
+     * False Positive
+     */
+    false_positive: boolean | null;
+    /**
+     * Ground Truth
+     */
+    ground_truth: {
+        [key: string]: unknown;
+    };
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Latency Ms
+     */
+    latency_ms: number;
+    /**
+     * Query Id
+     */
+    query_id: string;
+    /**
+     * Query Text
+     */
+    query_text: string;
+    /**
+     * Recall At K
+     */
+    recall_at_k: number | null;
+    /**
+     * Reciprocal Rank
+     */
+    reciprocal_rank: number | null;
+    /**
+     * Retrieved Items
+     */
+    retrieved_items: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Run Id
+     */
+    run_id: string;
+    /**
+     * Source Hit At K
+     */
+    source_hit_at_k: boolean | null;
+    split: RagEvaluationSplit;
+};
+
+/**
+ * RagEvaluationRunCreate
+ */
+export type RagEvaluationRunCreate = {
+    /**
+     * Confirm Test Set
+     */
+    confirm_test_set?: boolean;
+    /**
+     * Idempotency Key
+     */
+    idempotency_key: string;
+    /**
+     * Score Threshold
+     */
+    score_threshold?: number | null;
+    split?: RagEvaluationSplit;
+    /**
+     * Top K
+     */
+    top_k?: number;
+};
+
+/**
+ * RagEvaluationRunListResponse
+ */
+export type RagEvaluationRunListResponse = {
+    /**
+     * Items
+     */
+    items: Array<RagEvaluationRunResponse>;
+    /**
+     * Page
+     */
+    page: number;
+    /**
+     * Page Size
+     */
+    page_size: number;
+    /**
+     * Pages
+     */
+    pages: number;
+    /**
+     * Total
+     */
+    total: number;
+};
+
+/**
+ * RagEvaluationRunResponse
+ */
+export type RagEvaluationRunResponse = {
+    /**
+     * Attempt
+     */
+    attempt: number;
+    /**
+     * Build Revision
+     */
+    build_revision: string | null;
+    /**
+     * Completed Query Count
+     */
+    completed_query_count: number;
+    /**
+     * Created At
+     */
+    created_at: string;
+    /**
+     * Dataset Id
+     */
+    dataset_id: string | null;
+    /**
+     * Error Code
+     */
+    error_code: string | null;
+    /**
+     * Error Message
+     */
+    error_message: string | null;
+    /**
+     * Evaluation Set Id
+     */
+    evaluation_set_id: string;
+    /**
+     * Evaluation Set Sha256
+     */
+    evaluation_set_sha256: string;
+    /**
+     * Evaluation Set Version
+     */
+    evaluation_set_version: string;
+    /**
+     * Finished At
+     */
+    finished_at: string | null;
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Idempotency Key
+     */
+    idempotency_key: string;
+    /**
+     * Provider
+     */
+    provider: string;
+    /**
+     * Query Count
+     */
+    query_count: number;
+    /**
+     * Score Threshold
+     */
+    score_threshold: number | null;
+    split: RagEvaluationSplit;
+    /**
+     * Started At
+     */
+    started_at: string | null;
+    status: RagEvaluationRunStatus;
+    /**
+     * Summary Metrics
+     */
+    summary_metrics: {
+        [key: string]: unknown;
+    } | null;
+    /**
+     * Top K
+     */
+    top_k: number;
+    /**
+     * Updated At
+     */
+    updated_at: string;
+};
+
+/**
+ * RagEvaluationRunStatus
+ */
+export type RagEvaluationRunStatus = 'queued' | 'running' | 'completed' | 'failed';
+
+/**
+ * RagEvaluationSplit
+ */
+export type RagEvaluationSplit = 'calibration' | 'test';
+
+/**
+ * ValidationError
+ */
+export type ValidationError = {
+    /**
+     * Context
+     */
+    ctx?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Input
+     */
+    input?: unknown;
+    /**
+     * Location
+     */
+    loc: Array<string | number>;
+    /**
+     * Message
+     */
+    msg: string;
+    /**
+     * Error Type
+     */
+    type: string;
+};
 
 /**
  * WorkflowAcceptedResponse
@@ -1124,3 +1406,120 @@ export type SearchKnowledgeApiV1KnowledgeSearchPostResponses = {
 };
 
 export type SearchKnowledgeApiV1KnowledgeSearchPostResponse = SearchKnowledgeApiV1KnowledgeSearchPostResponses[keyof SearchKnowledgeApiV1KnowledgeSearchPostResponses];
+
+export type ListRagEvaluationRunsApiV1RagEvaluationsRunsGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Page
+         */
+        page?: number;
+        /**
+         * Page Size
+         */
+        page_size?: number;
+    };
+    url: '/api/v1/rag/evaluations/runs';
+};
+
+export type ListRagEvaluationRunsApiV1RagEvaluationsRunsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListRagEvaluationRunsApiV1RagEvaluationsRunsGetError = ListRagEvaluationRunsApiV1RagEvaluationsRunsGetErrors[keyof ListRagEvaluationRunsApiV1RagEvaluationsRunsGetErrors];
+
+export type ListRagEvaluationRunsApiV1RagEvaluationsRunsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RagEvaluationRunListResponse;
+};
+
+export type ListRagEvaluationRunsApiV1RagEvaluationsRunsGetResponse = ListRagEvaluationRunsApiV1RagEvaluationsRunsGetResponses[keyof ListRagEvaluationRunsApiV1RagEvaluationsRunsGetResponses];
+
+export type CreateRagEvaluationRunApiV1RagEvaluationsRunsPostData = {
+    body: RagEvaluationRunCreate;
+    path?: never;
+    query?: never;
+    url: '/api/v1/rag/evaluations/runs';
+};
+
+export type CreateRagEvaluationRunApiV1RagEvaluationsRunsPostErrors = {
+    /**
+     * Not Found
+     */
+    404: ApiErrorResponse;
+    /**
+     * Conflict
+     */
+    409: ApiErrorResponse;
+    /**
+     * Unprocessable Entity
+     */
+    422: ApiErrorResponse;
+    /**
+     * Service Unavailable
+     */
+    503: ApiErrorResponse;
+};
+
+export type CreateRagEvaluationRunApiV1RagEvaluationsRunsPostError = CreateRagEvaluationRunApiV1RagEvaluationsRunsPostErrors[keyof CreateRagEvaluationRunApiV1RagEvaluationsRunsPostErrors];
+
+export type CreateRagEvaluationRunApiV1RagEvaluationsRunsPostResponses = {
+    /**
+     * Idempotent replay; the existing run is returned.
+     */
+    200: RagEvaluationAcceptedResponse;
+    /**
+     * Successful Response
+     */
+    202: RagEvaluationAcceptedResponse;
+};
+
+export type CreateRagEvaluationRunApiV1RagEvaluationsRunsPostResponse = CreateRagEvaluationRunApiV1RagEvaluationsRunsPostResponses[keyof CreateRagEvaluationRunApiV1RagEvaluationsRunsPostResponses];
+
+export type GetRagEvaluationRunApiV1RagEvaluationsRunsRunIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Run Id
+         */
+        run_id: string;
+    };
+    query?: never;
+    url: '/api/v1/rag/evaluations/runs/{run_id}';
+};
+
+export type GetRagEvaluationRunApiV1RagEvaluationsRunsRunIdGetErrors = {
+    /**
+     * Not Found
+     */
+    404: ApiErrorResponse;
+    /**
+     * Conflict
+     */
+    409: ApiErrorResponse;
+    /**
+     * Unprocessable Entity
+     */
+    422: ApiErrorResponse;
+    /**
+     * Service Unavailable
+     */
+    503: ApiErrorResponse;
+};
+
+export type GetRagEvaluationRunApiV1RagEvaluationsRunsRunIdGetError = GetRagEvaluationRunApiV1RagEvaluationsRunsRunIdGetErrors[keyof GetRagEvaluationRunApiV1RagEvaluationsRunsRunIdGetErrors];
+
+export type GetRagEvaluationRunApiV1RagEvaluationsRunsRunIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: RagEvaluationDetailResponse;
+};
+
+export type GetRagEvaluationRunApiV1RagEvaluationsRunsRunIdGetResponse = GetRagEvaluationRunApiV1RagEvaluationsRunsRunIdGetResponses[keyof GetRagEvaluationRunApiV1RagEvaluationsRunsRunIdGetResponses];
