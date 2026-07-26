@@ -1419,6 +1419,14 @@ export type ListRagEvaluationRunsApiV1RagEvaluationsRunsGetData = {
          * Page Size
          */
         page_size?: number;
+        /**
+         * Split
+         */
+        split?: RagEvaluationSplit | null;
+        /**
+         * Status
+         */
+        status?: RagEvaluationRunStatus | null;
     };
     url: '/api/v1/rag/evaluations/runs';
 };

@@ -77,6 +77,8 @@ Dify Cloud 评测默认使用 `ALERT_SAGE_RAG_EVALUATION_QUERY_INTERVAL_SECONDS=
 
 固定顺序是：先发布语料，只查看 calibration 并选择参数，固定候选方案后再执行一次 test。查看 test 后继续调参会污染保留集，需要提升评测集版本并补充新的 test 问题。
 
+V2.6C 只读报告位于 `http://localhost:15173/evaluations`。列表支持 split 和状态筛选；选择两条已完成且评测集 ID、版本、SHA、split 一致的运行后进入对比页。详情页在运行活跃时每两秒轮询，完成后停止。页面不提供评测集编辑或 test 启动入口。
+
 ### 2.3 DeepSeek 诊断模型
 
 离线开发保持 `ALERT_SAGE_DIAGNOSTIC_MODEL_PROVIDER=mock`。启用真实诊断时，在根目录 `.env` 中设置：

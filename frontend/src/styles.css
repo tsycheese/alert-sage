@@ -476,6 +476,56 @@ a {
   font-size: 12px;
 }
 
+.evaluation-page-heading {
+  align-items: flex-end;
+}
+
+.evaluation-filters {
+  row-gap: 14px;
+}
+
+.evaluation-filters .ant-form-item {
+  margin-bottom: 0;
+}
+
+.evaluation-metric-grid {
+  margin-bottom: 16px;
+}
+
+.evaluation-query-cell {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.evaluation-query-cell .ant-typography {
+  overflow-wrap: anywhere;
+}
+
+.evaluation-retrieved-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 58px;
+  gap: 6px;
+  align-items: center;
+}
+
+.evaluation-rank {
+  color: #2563eb;
+  font-weight: 700;
+}
+
+.evaluation-compare-run-card {
+  height: 100%;
+  border: 1px solid rgb(148 163 184 / 18%);
+  box-shadow: 0 10px 28px rgb(15 23 42 / 5%);
+}
+
+.evaluation-wrap-id {
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 768px) {
   .app-header {
     min-height: 64px;
@@ -516,6 +566,16 @@ a {
     grid-template-columns: 1fr 1fr;
   }
 
+  .evaluation-filters {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .evaluation-filters .ant-form-item,
+  .evaluation-filters .filter-select {
+    width: 100%;
+  }
+
   .alert-filters .ant-form-item,
   .filter-select,
   .filter-service {
@@ -543,6 +603,14 @@ a {
 
   .alert-filters {
     grid-template-columns: 1fr;
+  }
+
+  .evaluation-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .evaluation-page-heading > .ant-btn {
+    width: 100%;
   }
 
   .filter-actions {

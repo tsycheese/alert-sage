@@ -80,12 +80,29 @@ class RagEvaluationQueryService:
             raise RagEvaluationNotFoundError
         return run
 
-    async def list(self, *, page: int, page_size: int) -> RagEvaluationRunPage:
-        total = int(await self.session.scalar(select(func.count(RagEvaluationRun.id))) or 0)
+    async def list(
+        self,
+        *,
+        page: int,
+        page_size: int,
+        split: RagEvaluationSplit | None = None,
+        status: RagEvaluationRunStatus | None = None,
+    ) -> RagEvaluationRunPage:
+        count_statement = select(func.count(RagEvaluationRun.id))
+        items_statement = select(RagEvaluationRun)
+        if split is not None:
+            count_statement = count_statement.where(RagEvaluationRun.split == split)
+            items_statement = items_statement.where(RagEvaluationRun.split == split)
+        if status is not None:
+            count_statement = count_statement.where(RagEvaluationRun.status == status)
+            items_statement = items_statement.where(RagEvaluationRun.status == status)
+
+        total = int(await self.session.scalar(count_statement) or 0)
         items = list(
             await self.session.scalars(
-                select(RagEvaluationRun)
-                .order_by(RagEvaluationRun.created_at.desc(), RagEvaluationRun.id.desc())
+                items_statement.order_by(
+                    RagEvaluationRun.created_at.desc(), RagEvaluationRun.id.desc()
+                )
                 .offset((page - 1) * page_size)
                 .limit(page_size)
             )

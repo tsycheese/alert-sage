@@ -11,6 +11,10 @@ import type {
   HumanDecisionRequest,
   KnowledgeSearchRequest,
   KnowledgeSearchResponse,
+  RagEvaluationDetailResponse,
+  RagEvaluationRunListResponse,
+  RagEvaluationRunStatus,
+  RagEvaluationSplit,
   WorkflowAcceptedResponse,
   WorkflowDetailResponse,
   WorkflowEventListResponse,
@@ -30,6 +34,13 @@ export interface AlertListParams {
 export interface CreateAlertResult {
   alert: AlertResponse;
   replayed: boolean;
+}
+
+export interface RagEvaluationListParams {
+  split?: RagEvaluationSplit;
+  status?: RagEvaluationRunStatus;
+  page: number;
+  page_size: number;
 }
 
 export class ApiClientError extends Error {
@@ -210,6 +221,34 @@ export async function searchKnowledge(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(command),
   });
+  return data;
+}
+
+export async function listRagEvaluationRuns(
+  params: RagEvaluationListParams,
+  signal?: AbortSignal,
+): Promise<RagEvaluationRunListResponse> {
+  const search = new URLSearchParams({
+    page: String(params.page),
+    page_size: String(params.page_size),
+  });
+  if (params.split) search.set("split", params.split);
+  if (params.status) search.set("status", params.status);
+  const { data } = await requestJson<RagEvaluationRunListResponse>(
+    `/api/v1/rag/evaluations/runs?${search.toString()}`,
+    { signal },
+  );
+  return data;
+}
+
+export async function getRagEvaluationRun(
+  runId: string,
+  signal?: AbortSignal,
+): Promise<RagEvaluationDetailResponse> {
+  const { data } = await requestJson<RagEvaluationDetailResponse>(
+    `/api/v1/rag/evaluations/runs/${encodeURIComponent(runId)}`,
+    { signal },
+  );
   return data;
 }
 

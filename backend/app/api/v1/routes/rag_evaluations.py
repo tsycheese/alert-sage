@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import get_settings
 from app.core.errors import ApiError
 from app.db.session import get_db_session, get_session_factory
+from app.models.enums import RagEvaluationRunStatus, RagEvaluationSplit
 from app.schemas.error import ApiErrorResponse
 from app.schemas.rag_evaluation import (
     RagEvaluationAcceptedResponse,
@@ -99,8 +100,15 @@ async def list_rag_evaluation_runs(
     session: DatabaseSession,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+    split: RagEvaluationSplit | None = None,
+    run_status: Annotated[RagEvaluationRunStatus | None, Query(alias="status")] = None,
 ) -> RagEvaluationRunListResponse:
-    result = await RagEvaluationQueryService(session).list(page=page, page_size=page_size)
+    result = await RagEvaluationQueryService(session).list(
+        page=page,
+        page_size=page_size,
+        split=split,
+        status=run_status,
+    )
     return RagEvaluationRunListResponse(
         items=[RagEvaluationRunResponse.model_validate(item) for item in result.items],
         total=result.total,

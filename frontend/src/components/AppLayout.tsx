@@ -1,4 +1,4 @@
-import { AlertOutlined, BookOutlined, RobotOutlined } from "@ant-design/icons";
+import { AlertOutlined, BookOutlined, ExperimentOutlined, RobotOutlined } from "@ant-design/icons";
 import { Layout, Space, Typography } from "antd";
 import type { ReactElement } from "react";
 import { Link, NavLink, Outlet } from "react-router";
@@ -39,6 +39,15 @@ export function AppLayout(): ReactElement {
             <Space size={8}>
               <BookOutlined />
               知识检索
+            </Space>
+          </NavLink>
+          <NavLink
+            to="/evaluations"
+            className={({ isActive }) => `nav-link${isActive ? " nav-link-active" : ""}`}
+          >
+            <Space size={8}>
+              <ExperimentOutlined />
+              RAG 评测
             </Space>
           </NavLink>
         </nav>

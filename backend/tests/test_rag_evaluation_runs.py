@@ -365,6 +365,16 @@ async def test_rag_evaluation_api_create_replay_list_and_detail(
     listing = await client.get("/api/v1/rag/evaluations/runs")  # type: ignore[attr-defined]
     assert listing.status_code == 200
     assert listing.json()["total"] == 1
+    queued = await client.get(  # type: ignore[attr-defined]
+        "/api/v1/rag/evaluations/runs?split=calibration&status=queued"
+    )
+    assert queued.status_code == 200
+    assert queued.json()["total"] == 1
+    test_runs = await client.get(  # type: ignore[attr-defined]
+        "/api/v1/rag/evaluations/runs?split=test"
+    )
+    assert test_runs.status_code == 200
+    assert test_runs.json()["total"] == 0
     detail = await client.get(  # type: ignore[attr-defined]
         f"/api/v1/rag/evaluations/runs/{run_id}"
     )

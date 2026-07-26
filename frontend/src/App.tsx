@@ -19,6 +19,21 @@ const KnowledgeSearchPage = lazy(() =>
     default: module.KnowledgeSearchPage,
   })),
 );
+const EvaluationListPage = lazy(() =>
+  import("./pages/evaluations/EvaluationListPage").then((module) => ({
+    default: module.EvaluationListPage,
+  })),
+);
+const EvaluationDetailPage = lazy(() =>
+  import("./pages/evaluations/EvaluationDetailPage").then((module) => ({
+    default: module.EvaluationDetailPage,
+  })),
+);
+const EvaluationComparePage = lazy(() =>
+  import("./pages/evaluations/EvaluationComparePage").then((module) => ({
+    default: module.EvaluationComparePage,
+  })),
+);
 const NotFoundPage = lazy(() =>
   import("./pages/NotFoundPage").then((module) => ({ default: module.NotFoundPage })),
 );
@@ -41,6 +56,9 @@ export function App(): ReactElement {
           <Route path="alerts/new" element={<AlertCreatePage />} />
           <Route path="alerts/:alertId" element={<AlertDetailPage />} />
           <Route path="knowledge" element={<KnowledgeSearchPage />} />
+          <Route path="evaluations" element={<EvaluationListPage />} />
+          <Route path="evaluations/compare" element={<EvaluationComparePage />} />
+          <Route path="evaluations/:runId" element={<EvaluationDetailPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>
