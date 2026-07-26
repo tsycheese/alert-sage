@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     test_database_url: str | None = None
     redis_url: str = "redis://localhost:6379/1"
     celery_broker_url: str = "redis://localhost:6379/0"
+    celery_log_service: str = Field(default="alert-sage-worker", min_length=1, max_length=64)
+    outbox_poll_interval_seconds: float = Field(default=5.0, gt=0, le=60)
+    outbox_batch_size: int = Field(default=50, ge=1, le=500)
+    outbox_retry_base_seconds: float = Field(default=2.0, gt=0, le=300)
+    outbox_retry_max_seconds: float = Field(default=60.0, gt=0, le=3600)
     workflow_lock_ttl_seconds: int = 300
     workflow_event_poll_seconds: float = 2.0
     metrics_enabled: bool = True
@@ -51,6 +56,11 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_integrations(self) -> "Settings":
+        if self.outbox_retry_max_seconds < self.outbox_retry_base_seconds:
+            raise ValueError(
+                "ALERT_SAGE_OUTBOX_RETRY_MAX_SECONDS must be greater than or equal to "
+                "ALERT_SAGE_OUTBOX_RETRY_BASE_SECONDS"
+            )
         self.dify_base_url = self.dify_base_url.rstrip("/")
         self.diagnostic_model_base_url = self.diagnostic_model_base_url.rstrip("/")
         if self.diagnostic_model_provider == "deepseek":

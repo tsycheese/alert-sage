@@ -9,8 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.integrations.knowledge.cases import CaseDocument, CasePublisher
 from app.models.case import Case
 from app.models.diagnosis import DiagnosisReport
-from app.models.enums import KnowledgeSyncStatus, WorkflowEventType
+from app.models.enums import KnowledgeSyncStatus, OutboxTopic, WorkflowEventType
 from app.models.workflow import WorkflowRun
+from app.services.outbox import enqueue_outbox_message, next_delivery_number
 from app.services.workflow_events import append_workflow_event
 
 
@@ -67,7 +68,7 @@ class CaseSyncService:
         self.publisher = publisher
         self.timeout_seconds = timeout_seconds
 
-    async def prepare_retry(self, case_id: UUID) -> bool:
+    async def prepare_retry(self, case_id: UUID, *, enqueue: bool = True) -> bool:
         async with self.session_factory() as session:
             case = await self._locked_case(session, case_id)
             if case.knowledge_sync_status == KnowledgeSyncStatus.SYNCED:
@@ -77,6 +78,29 @@ class CaseSyncService:
             case.knowledge_sync_status = KnowledgeSyncStatus.PENDING
             case.sync_error_code = None
             case.sync_error_message = None
+            if enqueue:
+                workflow_run_id = await self._workflow_run_id(session, case.diagnosis_report_id)
+                run = await session.get(WorkflowRun, workflow_run_id)
+                if run is None:
+                    raise CaseStateConflictError("case workflow run does not exist")
+                delivery = await next_delivery_number(
+                    session,
+                    topic=OutboxTopic.CASE_SYNC,
+                    aggregate_id=case.id,
+                )
+                await enqueue_outbox_message(
+                    session,
+                    topic=OutboxTopic.CASE_SYNC,
+                    aggregate_id=case.id,
+                    idempotency_key=f"case:sync:{case.id}:delivery-{delivery}",
+                    payload={"case_id": str(case.id)},
+                    correlation={
+                        "alert_id": run.alert_id,
+                        "workflow_run_id": run.id,
+                        "thread_id": run.thread_id,
+                        "case_id": case.id,
+                    },
+                )
             await session.commit()
             return True
 

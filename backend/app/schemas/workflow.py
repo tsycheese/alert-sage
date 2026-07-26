@@ -193,7 +193,9 @@ class WorkflowDetailResponse(BaseModel):
 class WorkflowAcceptedResponse(BaseModel):
     workflow_run_id: UUID
     status: WorkflowRunStatus
-    dispatched: bool
+    dispatched: bool = Field(
+        description="Whether this request created a new durable Outbox delivery intent."
+    )
 
 
 class WorkflowEventResponse(BaseModel):

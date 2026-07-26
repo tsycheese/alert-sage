@@ -400,6 +400,7 @@
             "type": "string"
           },
           "dispatched": {
+            "description": "Whether this request created a new durable Outbox delivery intent.",
             "title": "Dispatched",
             "type": "boolean"
           },
@@ -744,6 +745,7 @@
       "WorkflowAcceptedResponse": {
         "properties": {
           "dispatched": {
+            "description": "Whether this request created a new durable Outbox delivery intent.",
             "title": "Dispatched",
             "type": "boolean"
           },
@@ -1353,16 +1355,6 @@
               }
             },
             "description": "Unprocessable Entity"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Service Unavailable"
           }
         },
         "summary": "Get Case",
@@ -1426,16 +1418,6 @@
               }
             },
             "description": "Unprocessable Entity"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Service Unavailable"
           }
         },
         "summary": "Retry Case Sync",
@@ -1509,16 +1491,6 @@
               }
             },
             "description": "Unprocessable Entity"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Service Unavailable"
           }
         },
         "summary": "Submit Workflow Decision",
@@ -1605,16 +1577,6 @@
               }
             },
             "description": "Unprocessable Entity"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Service Unavailable"
           }
         },
         "summary": "List Workflow Events",
@@ -1678,16 +1640,6 @@
               }
             },
             "description": "Unprocessable Entity"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Service Unavailable"
           }
         },
         "summary": "Retry Workflow",
@@ -1765,16 +1717,6 @@
               }
             },
             "description": "Unprocessable Entity"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Service Unavailable"
           }
         },
         "summary": "Stream Workflow Events",
@@ -1838,16 +1780,6 @@
               }
             },
             "description": "Unprocessable Entity"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Service Unavailable"
           }
         },
         "summary": "Get Workflow",
@@ -1919,16 +1851,6 @@
               }
             },
             "description": "Unprocessable Entity"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Service Unavailable"
           }
         },
         "summary": "Start Workflow",

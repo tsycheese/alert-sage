@@ -17,6 +17,7 @@ from app.models.diagnosis import DiagnosisReport, HumanDecision
 from app.models.enums import (
     AlertStatus,
     HumanDecisionAction,
+    OutboxTopic,
     ToolExecutionStatus,
     WorkflowEventType,
     WorkflowRunStatus,
@@ -28,6 +29,7 @@ from app.schemas.workflow import (
     HumanDecisionCommand,
     WorkflowResumePayload,
 )
+from app.services.outbox import enqueue_outbox_message
 from app.services.workflow_events import append_workflow_event
 from app.workflows.alert.state import AlertWorkflowState
 from app.workflows.alert.transitions import (
@@ -89,6 +91,7 @@ class AlertWorkflowService:
         prepared = await self.prepare_start(
             alert_id=alert_id,
             idempotency_key=idempotency_key,
+            enqueue=False,
         )
         if not prepared.created:
             return await self.get_result(prepared.workflow_run_id)
@@ -99,10 +102,12 @@ class AlertWorkflowService:
         *,
         alert_id: UUID,
         idempotency_key: str,
+        enqueue: bool = True,
     ) -> PreparedWorkflowRun:
         run, _alert, created = await self._prepare_run(
             alert_id=alert_id,
             idempotency_key=idempotency_key,
+            enqueue=enqueue,
         )
         return PreparedWorkflowRun(
             workflow_run_id=run.id,
@@ -167,7 +172,11 @@ class AlertWorkflowService:
             comment=command.comment,
             actor=actor,
         )
-        should_resume, _decision_id = await self._persist_human_decision(workflow_run_id, resume)
+        should_resume, _decision_id, _delivery_created = await self._persist_human_decision(
+            workflow_run_id,
+            resume,
+            enqueue=False,
+        )
         if not should_resume:
             return await self.get_result(workflow_run_id)
         return await self._drive(
@@ -188,8 +197,12 @@ class AlertWorkflowService:
             comment=command.comment,
             actor=actor,
         )
-        should_resume, decision_id = await self._persist_human_decision(workflow_run_id, resume)
-        return decision_id if should_resume else None
+        should_resume, decision_id, delivery_created = await self._persist_human_decision(
+            workflow_run_id,
+            resume,
+            enqueue=True,
+        )
+        return decision_id if should_resume and delivery_created else None
 
     async def execute_resume(
         self,
@@ -230,11 +243,11 @@ class AlertWorkflowService:
             graph_input,
         )
 
-    async def prepare_retry(self, workflow_run_id: UUID) -> None:
+    async def prepare_retry(self, workflow_run_id: UUID, *, enqueue: bool = True) -> bool:
         async with self.session_factory() as session:
             run = await self._locked_run(session, workflow_run_id)
             if run.status == WorkflowRunStatus.QUEUED:
-                return
+                return False
             if run.status != WorkflowRunStatus.FAILED:
                 raise WorkflowStateConflictError(f"workflow status {run.status} cannot be retried")
             ensure_workflow_run_status_transition(run.status, WorkflowRunStatus.QUEUED)
@@ -251,7 +264,22 @@ class AlertWorkflowService:
                 status=WorkflowRunStatus.QUEUED,
                 payload={"workflow_version": run.workflow_version, "attempt": run.attempt},
             )
+            delivery_created = True
+            if enqueue:
+                _, delivery_created = await enqueue_outbox_message(
+                    session,
+                    topic=OutboxTopic.WORKFLOW_RETRY,
+                    aggregate_id=run.id,
+                    idempotency_key=f"workflow:retry:{run.id}:attempt-{run.attempt}",
+                    payload={"workflow_run_id": str(run.id)},
+                    correlation={
+                        "alert_id": run.alert_id,
+                        "workflow_run_id": run.id,
+                        "thread_id": run.thread_id,
+                    },
+                )
             await session.commit()
+            return delivery_created
 
     async def execute_retry(self, workflow_run_id: UUID) -> WorkflowExecutionResult:
         async with self.session_factory() as session:
@@ -264,9 +292,6 @@ class AlertWorkflowService:
             await self._mark_started(workflow_run_id)
             return await self._drive(workflow_run_id, None)
         return await self.execute_start(workflow_run_id)
-
-    async def mark_dispatch_failed(self, workflow_run_id: UUID, error: Exception) -> None:
-        await self._mark_failed(workflow_run_id, error)
 
     async def get_result(self, workflow_run_id: UUID) -> WorkflowExecutionResult:
         async with self.session_factory() as session:
@@ -301,6 +326,7 @@ class AlertWorkflowService:
         *,
         alert_id: UUID,
         idempotency_key: str,
+        enqueue: bool,
     ) -> tuple[WorkflowRun, Alert, bool]:
         async with self.session_factory() as session:
             existing = await session.scalar(
@@ -342,6 +368,19 @@ class AlertWorkflowService:
                 status=WorkflowRunStatus.QUEUED,
                 payload={"workflow_version": WORKFLOW_VERSION, "attempt": 1},
             )
+            if enqueue:
+                await enqueue_outbox_message(
+                    session,
+                    topic=OutboxTopic.WORKFLOW_START,
+                    aggregate_id=run.id,
+                    idempotency_key=f"workflow:start:{run.id}",
+                    payload={"workflow_run_id": str(run.id)},
+                    correlation={
+                        "alert_id": alert.id,
+                        "workflow_run_id": run.id,
+                        "thread_id": run.thread_id,
+                    },
+                )
             await session.commit()
             return run, alert, True
 
@@ -566,7 +605,9 @@ class AlertWorkflowService:
         self,
         workflow_run_id: UUID,
         resume: WorkflowResumePayload,
-    ) -> tuple[bool, UUID | None]:
+        *,
+        enqueue: bool,
+    ) -> tuple[bool, UUID | None, bool]:
         async with self.session_factory() as session:
             run = await self._locked_run(session, workflow_run_id)
             if run.status in {WorkflowRunStatus.COMPLETED, WorkflowRunStatus.REJECTED}:
@@ -578,7 +619,7 @@ class AlertWorkflowService:
                 if existing is None:
                     raise WorkflowStateConflictError("workflow is already terminal")
                 self._ensure_same_decision(existing, resume)
-                return False, existing.id
+                return False, existing.id, False
             if run.status != WorkflowRunStatus.WAITING_FOR_APPROVAL:
                 raise WorkflowStateConflictError(
                     f"workflow status {run.status} does not accept human input"
@@ -599,7 +640,7 @@ class AlertWorkflowService:
             if existing is not None:
                 self._ensure_same_decision(existing, resume)
                 if existing.diagnosis_report_id != report.id:
-                    return False, existing.id
+                    return False, existing.id, False
             else:
                 report_decision = await session.scalar(
                     select(HumanDecision).where(HumanDecision.diagnosis_report_id == report.id)
@@ -637,8 +678,25 @@ class AlertWorkflowService:
                 ensure_alert_status_transition(alert.status, AlertStatus.REANALYZING)
                 run.status = WorkflowRunStatus.REANALYZING
                 alert.status = AlertStatus.REANALYZING
+            delivery_created = False
+            if enqueue:
+                _, delivery_created = await enqueue_outbox_message(
+                    session,
+                    topic=OutboxTopic.WORKFLOW_RESUME,
+                    aggregate_id=run.id,
+                    idempotency_key=f"workflow:resume:{existing.id}",
+                    payload={
+                        "workflow_run_id": str(run.id),
+                        "decision_id": str(existing.id),
+                    },
+                    correlation={
+                        "alert_id": run.alert_id,
+                        "workflow_run_id": run.id,
+                        "thread_id": run.thread_id,
+                    },
+                )
             await session.commit()
-            return True, existing.id
+            return True, existing.id, delivery_created
 
     async def _persist_final_status(
         self,
@@ -726,6 +784,19 @@ class AlertWorkflowService:
             node_name="finalize",
             status=case.knowledge_sync_status,
             payload={"case_id": str(case.id), "report_version": report.version},
+        )
+        await enqueue_outbox_message(
+            session,
+            topic=OutboxTopic.CASE_SYNC,
+            aggregate_id=case.id,
+            idempotency_key=f"case:sync:{case.id}:delivery-1",
+            payload={"case_id": str(case.id)},
+            correlation={
+                "alert_id": run.alert_id,
+                "workflow_run_id": run.id,
+                "thread_id": run.thread_id,
+                "case_id": case.id,
+            },
         )
         return case
 

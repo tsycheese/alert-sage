@@ -17,6 +17,7 @@ CORRELATION_FIELDS = (
     "workflow_run_id",
     "thread_id",
     "case_id",
+    "outbox_message_id",
 )
 CONTEXT_FIELDS = (*CORRELATION_FIELDS, "task_id")
 LOG_FIELDS = (
@@ -35,12 +36,11 @@ LOG_FIELDS = (
     "result_count",
     "error_type",
     "error_code",
+    "topic",
 )
 CELERY_HEADER_PREFIX = "alert_sage_"
 
-_context: ContextVar[dict[str, str] | None] = ContextVar(
-    "alert_sage_log_context", default=None
-)
+_context: ContextVar[dict[str, str] | None] = ContextVar("alert_sage_log_context", default=None)
 _safe_identifier = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _bearer = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+")
 _credential = re.compile(
@@ -67,7 +67,13 @@ def normalize_context(fields: Mapping[str, object]) -> dict[str, str]:
     for key, value in fields.items():
         if key not in CONTEXT_FIELDS or value is None:
             continue
-        if key in {"request_id", "alert_id", "workflow_run_id", "case_id"}:
+        if key in {
+            "request_id",
+            "alert_id",
+            "workflow_run_id",
+            "case_id",
+            "outbox_message_id",
+        }:
             safe_value = _as_uuid(value)
         else:
             safe_value = _as_identifier(value)
@@ -101,9 +107,7 @@ def celery_correlation_headers() -> dict[str, str]:
 
 def correlation_from_celery_headers(headers: Mapping[str, object] | None) -> dict[str, str]:
     raw_headers = headers or {}
-    values = {
-        key: raw_headers.get(f"{CELERY_HEADER_PREFIX}{key}") for key in CORRELATION_FIELDS
-    }
+    values = {key: raw_headers.get(f"{CELERY_HEADER_PREFIX}{key}") for key in CORRELATION_FIELDS}
     normalized = normalize_context(values)
     normalized.setdefault("request_id", str(uuid4()))
     return normalized
@@ -111,11 +115,7 @@ def correlation_from_celery_headers(headers: Mapping[str, object] | None) -> dic
 
 def event_correlation_payload() -> dict[str, str]:
     context = get_log_context()
-    return {
-        key: context[key]
-        for key in ("request_id", "client_request_id")
-        if key in context
-    }
+    return {key: context[key] for key in ("request_id", "client_request_id") if key in context}
 
 
 def redact_log_text(value: object) -> str:

@@ -74,6 +74,20 @@ API 指标位于 `http://localhost:18000/metrics`，Worker multiprocess 指标�
 
 API 与 Worker 默认输出单行 JSON 日志。每个 API 响应包含服务端生成的 `X-Request-ID`；若需要和调用方日志对齐，可传 `X-Client-Request-ID`，不要尝试覆盖 `X-Request-ID`。排障时可按 `request_id`、`alert_id`、`workflow_run_id`、`thread_id` 或 `case_id` 搜索容器日志。日志不会记录原始告警 payload、Prompt、检索 query、模型响应或供应商响应体。
 
+### 2.4 Outbox Relay
+
+V2.5 默认每五秒唤醒一次 Relay，每批最多发布 50 条消息，发布失败按 2 秒起步、最多 60 秒的指数退避重试：
+
+```dotenv
+ALERT_SAGE_CELERY_LOG_SERVICE=alert-sage-worker
+ALERT_SAGE_OUTBOX_POLL_INTERVAL_SECONDS=5
+ALERT_SAGE_OUTBOX_BATCH_SIZE=50
+ALERT_SAGE_OUTBOX_RETRY_BASE_SECONDS=2
+ALERT_SAGE_OUTBOX_RETRY_MAX_SECONDS=60
+```
+
+这些值同时存在于 `.env.example` 和本地 `.env` 模板。Relay 不需要新的凭据；API、Worker 和 Relay 必须连接同一 PostgreSQL 与 Redis。
+
 ## 3. 完整容器环境
 
 构建并启动：
@@ -86,16 +100,16 @@ Compose 会依次：
 
 1. 启动 PostgreSQL 和 Redis，并等待健康检查。
 2. 构建 API 镜像，执行 Alembic 迁移、初始化 LangGraph checkpoint 表并启动 Uvicorn。
-3. 启动 Celery Worker，使用 Redis Broker 调度工作流任务。
+3. 启动 Celery Worker 和 Celery Beat Relay；Relay 周期触发 Outbox 发布，Worker 使用 Redis Broker 执行业务任务。
 4. 构建 React 静态资源，通过 Nginx 提供页面并代理 `/api`，SSE 路由关闭代理缓冲。
 5. 启动 Prometheus，分别抓取 API 与 Worker 指标端点并保留七天数据。
-6. 启动 Grafana，通过仓库内 provisioning 自动加载 Prometheus 数据源和 V2.3 Dashboard。
+6. 启动 Grafana，通过仓库内 provisioning 自动加载 Prometheus 数据源和 V2.5 Dashboard。
 
 检查状态：
 
 ```powershell
 docker compose ps
-docker compose logs api worker prometheus grafana
+docker compose logs api worker relay prometheus grafana
 ```
 
 删除容器但保留数据卷：
@@ -204,8 +218,8 @@ npm run build
 - Web 能展示 API 实时健康状态，以及告警列表、创建、详情、空数据、加载、错误、幂等冲突和 404 状态。
 - 列表筛选和分页状态写入 URL，可刷新和分享；创建成功后进入对应详情页。
 - 后端测试、前端测试、类型检查和构建全部通过。
-- Docker Compose 七个服务均处于运行或健康状态。
-- `workflow_runs`、`workflow_events`、`tool_executions`、`diagnosis_reports`、`human_decisions`、`cases` 已通过迁移创建。
+- Docker Compose 八个服务均处于运行或健康状态。
+- `workflow_runs`、`workflow_events`、`tool_executions`、`diagnosis_reports`、`human_decisions`、`cases`、`outbox_messages` 已通过迁移创建。
 - 数据库能阻止同一告警存在多个活动运行，以及重复事件序号、工具执行和人工决策。
 - 工作流 State、诊断报告和人工决策输入通过严格 Pydantic Schema 校验。
 - 七节点 LangGraph 可运行至 `human_review` 并持久化中断；关闭并重新创建运行时后可使用相同 `thread_id` 恢复。
@@ -215,7 +229,7 @@ npm run build
 - 工作流 API 返回 `202` 并由 Celery Worker 异步执行，不在 HTTP 请求中等待完整诊断。
 - Web 可启动诊断、查看报告与事件，并批准、驳回或携带反馈重新分析。
 - SSE 能通过 `Last-Event-ID` 从 PostgreSQL 补发事件，Redis 仅负责通知唤醒。
-- Broker 首次投递失败会持久化失败状态并支持重试。
+- API 将业务事实与 Outbox 投递意图原子提交；Broker 不可用时保持 `pending` 并自动退避，恢复后无需人工操作即可继续。
 - 人工批准会原子生成结构化案例；独立任务同步知识库，状态、尝试次数和外部文档 ID 可查询。
 - 案例同步失败不回滚工作流终态，Web 可重新投递，重复同步已成功案例不会重复发布。
 - 知识检索接口返回统一片段结构和可追溯来源，供应商超时、鉴权失败或异常响应统一映射为脱敏的 `503`。
@@ -226,7 +240,7 @@ npm run build
 - DeepSeek 与 Dify 已完成真实 Cloud 验收，离线测试仍默认使用 Mock；真实 Prometheus/Grafana 监控栈已接入，但工作流上下文中的指标、日志和 CMDB 数据源目前仍为确定性模拟适配器。
 - 当前只记录报告级模型名与 Prompt 版本，尚未持久化 token 用量、供应商 request ID、单次调用延迟和费用。
 - 真实模型调用尚未实现熔断与全局预算；当前只有超时、有限重试、输出修复和输入长度预算。
-- V1.3C 使用数据库事务提交后投递 Celery；首次投递失败可见且可重试，但尚未使用事务性 Outbox 消除进程在提交与投递之间退出的窗口，Outbox 计划在 V2 落地。
+- Outbox/Celery 为至少一次投递，不承诺严格一次；当前不设死信终态，持续失败的内部消息保留为 `pending` 并依赖指标、日志和人工排障。
 - 尚未接入认证和 RBAC；`actor` 当前为演示审计字段。
 
 ## 8. V1.3A 专项验证
@@ -265,7 +279,7 @@ WHERE table_schema = 'public'
 ORDER BY table_name;
 ```
 
-当前预期迁移版本为 `0003`，并能看到 `alerts`、`workflow_runs`、`workflow_events`、`tool_executions`、`diagnosis_reports`、`human_decisions` 和 `cases`。
+当前预期迁移版本为 `0004`，并能看到 `alerts`、`workflow_runs`、`workflow_events`、`tool_executions`、`diagnosis_reports`、`human_decisions`、`cases` 和 `outbox_messages`。
 
 ## 9. V1.3B 专项验证
 
@@ -456,3 +470,46 @@ docker compose logs --tail=100 api worker
 2026-07-22 已完成真实端到端验收：告警 `v2-4-correlation-e2e-1784694107777` 经 Dify 检索、DeepSeek 诊断与建议、人工批准和案例发布后进入 `completed`，案例状态为 `synced`，共持久化 19 条事件。启动请求的请求 ID 从 API 投递贯穿首段 Worker 链路，人工决策请求的请求 ID 贯穿恢复、收尾和案例同步链路；日志同时包含相应告警、运行、线程与案例标识。浏览器确认时间线显示 19 项、页面状态为“已完成”，无错误覆盖层、控制台错误或横向溢出。
 
 V2.4 质量门为后端 67 项测试、前端 9 项测试、Ruff、Python 编译、Alembic 差异检查、TypeScript 类型检查、生产构建、Compose 配置检查和真实浏览器验收全部通过。
+
+## 16. V2.5 事务性 Outbox 专项验证
+
+升级业务迁移、构建 V2.5 服务并查看 Relay：
+
+```powershell
+Set-Location backend
+uv run alembic upgrade head
+uv run alembic current
+uv run alembic check
+
+Set-Location ..
+docker compose up -d --build api worker relay
+docker compose logs --tail=100 worker relay
+```
+
+数据库可使用以下查询检查积压和投递历史：
+
+```sql
+SELECT topic, status, count(*)
+FROM outbox_messages
+GROUP BY topic, status
+ORDER BY topic, status;
+
+SELECT id, topic, aggregate_id, attempts, available_at,
+       published_at, last_error_type
+FROM outbox_messages
+WHERE status = 'pending'
+ORDER BY available_at, created_at;
+```
+
+验收标准：
+
+1. 工作流启动、人工决策、失败重试和案例同步都在对应业务事务内创建唯一 Outbox 消息；事务回滚时二者同时消失。
+2. Redis 停止期间 API 仍返回 `202`，消息保持 `pending`；Redis 恢复后无需重放 HTTP 请求，Relay 自动发布并继续执行。
+3. Broker 接受消息但 Outbox 状态提交失败时允许再次发布，稳定 Celery task ID 与消费者数据库幂等共同吸收重复。
+4. 多个发布任务通过 `FOR UPDATE SKIP LOCKED` 领取不同消息；批次上限、指数退避和严格消息 Schema 均有自动化覆盖。
+5. `outbox_message_id` 随关联上下文进入 JSON 日志，Prometheus 暴露发布结果、投递耗时和退避时长，Grafana 自动加载十一面板 Dashboard。
+6. API 的 `dispatched` 只表示本次创建了新投递意图；重复启动、重复决策或已排队重试返回 `false`。
+
+2026-07-26 已完成 Redis 故障恢复验收：停止 Redis 后创建的运行 `609d60ae-90b7-4a0f-8b17-2e64b055aa3f` 保持 `queued`，对应 `workflow.start` 消息持久化为 `pending`；恢复 Redis 后约一个轮询周期自动进入人工确认，批准后工作流完成，案例 `6e491471-4fe3-53b5-8e77-b85d5c16d26d` 自动同步。验收使用临时 Mock 供应商隔离 DeepSeek/Dify 网络波动，完成后恢复 `.env` 中的真实供应商配置。过程中发现下游案例消息继承上游 `outbox_message_id` 时发生关联字段重复绑定；修复为由当前消息 ID 覆盖父级上下文，并加入回归测试，积压案例随后自动恢复，证明消息未丢失。
+
+V2.5 质量门为后端 75 项测试、前端 9 项测试、Ruff、Ruff 格式检查、Python 编译、Alembic `0004` 差异检查、TypeScript 类型检查、生产构建、Compose 配置检查和运行态 Redis 故障恢复全部通过。

@@ -82,6 +82,10 @@ services:
       ALERT_SAGE_CELERY_BROKER_URL: redis://redis:6379/0
       ALERT_SAGE_METRICS_ENABLED: ${ALERT_SAGE_METRICS_ENABLED:-true}
       ALERT_SAGE_LOG_LEVEL: ${ALERT_SAGE_LOG_LEVEL:-INFO}
+      ALERT_SAGE_CELERY_LOG_SERVICE: alert-sage-worker
+      ALERT_SAGE_OUTBOX_BATCH_SIZE: ${ALERT_SAGE_OUTBOX_BATCH_SIZE:-50}
+      ALERT_SAGE_OUTBOX_RETRY_BASE_SECONDS: ${ALERT_SAGE_OUTBOX_RETRY_BASE_SECONDS:-2}
+      ALERT_SAGE_OUTBOX_RETRY_MAX_SECONDS: ${ALERT_SAGE_OUTBOX_RETRY_MAX_SECONDS:-60}
       ALERT_SAGE_WORKER_METRICS_PORT: 9101
       PROMETHEUS_MULTIPROC_DIR: /tmp/alert-sage-prometheus
       ALERT_SAGE_WORKFLOW_TOOL_TIMEOUT_SECONDS: ${ALERT_SAGE_WORKFLOW_TOOL_TIMEOUT_SECONDS:-10}
@@ -109,6 +113,26 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  relay:
+    build:
+      context: ./backend
+    environment:
+      ALERT_SAGE_ENVIRONMENT: development
+      ALERT_SAGE_CELERY_BROKER_URL: redis://redis:6379/0
+      ALERT_SAGE_CELERY_LOG_SERVICE: alert-sage-relay
+      ALERT_SAGE_LOG_LEVEL: ${ALERT_SAGE_LOG_LEVEL:-INFO}
+      ALERT_SAGE_OUTBOX_POLL_INTERVAL_SECONDS: ${ALERT_SAGE_OUTBOX_POLL_INTERVAL_SECONDS:-5}
+    command:
+      - .venv/bin/celery
+      - -A
+      - app.tasks.celery_app:celery_app
+      - beat
+      - --loglevel=INFO
+      - --schedule=/tmp/alert-sage-celerybeat-schedule
+    depends_on:
       redis:
         condition: service_healthy
 

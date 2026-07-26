@@ -1,94 +1,80 @@
 import logging
-from typing import Protocol
-from uuid import UUID
 
-from app.observability.logging import celery_correlation_headers
+from app.models.enums import OutboxTopic
+from app.models.outbox import OutboxMessage
+from app.observability.logging import (
+    bind_log_context,
+    celery_correlation_headers,
+)
+from app.schemas.outbox import (
+    CaseSyncMessage,
+    WorkflowResumeMessage,
+    WorkflowRetryMessage,
+    WorkflowStartMessage,
+)
 
 logger = logging.getLogger(__name__)
 
 
-class WorkflowDispatcher(Protocol):
-    def start(self, workflow_run_id: UUID) -> None: ...
+class CeleryOutboxPublisher:
+    """Translate a validated durable Outbox row into one Celery delivery."""
 
-    def resume(self, workflow_run_id: UUID, decision_id: UUID) -> None: ...
+    def publish(self, message: OutboxMessage) -> None:
+        topic = OutboxTopic(str(message.topic))
+        task_id = f"outbox-{message.id}"
+        correlation: dict[str, object] = {
+            **message.correlation,
+            "outbox_message_id": message.id,
+        }
+        with bind_log_context(**correlation):
+            headers = celery_correlation_headers()
+            if topic is OutboxTopic.WORKFLOW_START:
+                from app.tasks.workflows import run_workflow_start
 
-    def retry(self, workflow_run_id: UUID) -> None: ...
+                payload = WorkflowStartMessage.model_validate(message.payload)
+                run_workflow_start.apply_async(
+                    args=[str(payload.workflow_run_id)],
+                    task_id=task_id,
+                    headers=headers,
+                )
+                aggregate_context = {"workflow_run_id": str(payload.workflow_run_id)}
+            elif topic is OutboxTopic.WORKFLOW_RESUME:
+                from app.tasks.workflows import run_workflow_resume
 
+                payload = WorkflowResumeMessage.model_validate(message.payload)
+                run_workflow_resume.apply_async(
+                    args=[str(payload.workflow_run_id), str(payload.decision_id)],
+                    task_id=task_id,
+                    headers=headers,
+                )
+                aggregate_context = {"workflow_run_id": str(payload.workflow_run_id)}
+            elif topic is OutboxTopic.WORKFLOW_RETRY:
+                from app.tasks.workflows import run_workflow_retry
 
-class CaseDispatcher(Protocol):
-    def sync(self, case_id: UUID) -> None: ...
+                payload = WorkflowRetryMessage.model_validate(message.payload)
+                run_workflow_retry.apply_async(
+                    args=[str(payload.workflow_run_id)],
+                    task_id=task_id,
+                    headers=headers,
+                )
+                aggregate_context = {"workflow_run_id": str(payload.workflow_run_id)}
+            else:
+                from app.tasks.cases import run_case_sync
 
+                payload = CaseSyncMessage.model_validate(message.payload)
+                run_case_sync.apply_async(
+                    args=[str(payload.case_id)],
+                    task_id=task_id,
+                    headers=headers,
+                )
+                aggregate_context = {"case_id": str(payload.case_id)}
 
-class CeleryWorkflowDispatcher:
-    def start(self, workflow_run_id: UUID) -> None:
-        from app.tasks.workflows import run_workflow_start
-
-        run_workflow_start.apply_async(
-            args=[str(workflow_run_id)],
-            task_id=f"workflow-start-{workflow_run_id}",
-            headers=celery_correlation_headers(),
-        )
-        logger.info(
-            "celery.task.dispatched",
-            extra={
-                "operation": "workflow.start",
-                "task_id": f"workflow-start-{workflow_run_id}",
-                "workflow_run_id": str(workflow_run_id),
-            },
-        )
-
-    def resume(self, workflow_run_id: UUID, decision_id: UUID) -> None:
-        from app.tasks.workflows import run_workflow_resume
-
-        run_workflow_resume.apply_async(
-            args=[str(workflow_run_id), str(decision_id)],
-            task_id=f"workflow-resume-{decision_id}",
-            headers=celery_correlation_headers(),
-        )
-        logger.info(
-            "celery.task.dispatched",
-            extra={
-                "operation": "workflow.resume",
-                "task_id": f"workflow-resume-{decision_id}",
-                "workflow_run_id": str(workflow_run_id),
-            },
-        )
-
-    def retry(self, workflow_run_id: UUID) -> None:
-        from app.tasks.workflows import run_workflow_retry
-
-        run_workflow_retry.apply_async(
-            args=[str(workflow_run_id)],
-            headers=celery_correlation_headers(),
-        )
-        logger.info(
-            "celery.task.dispatched",
-            extra={"operation": "workflow.retry", "workflow_run_id": str(workflow_run_id)},
-        )
-
-
-class CeleryCaseDispatcher:
-    def sync(self, case_id: UUID) -> None:
-        from app.tasks.cases import run_case_sync
-
-        run_case_sync.apply_async(
-            args=[str(case_id)],
-            task_id=f"case-sync-{case_id}",
-            headers=celery_correlation_headers(),
-        )
-        logger.info(
-            "celery.task.dispatched",
-            extra={
-                "operation": "case.sync",
-                "task_id": f"case-sync-{case_id}",
-                "case_id": str(case_id),
-            },
-        )
-
-
-def get_workflow_dispatcher() -> WorkflowDispatcher:
-    return CeleryWorkflowDispatcher()
-
-
-def get_case_dispatcher() -> CaseDispatcher:
-    return CeleryCaseDispatcher()
+            logger.info(
+                "celery.task.dispatched",
+                extra={
+                    "operation": topic.value,
+                    "topic": topic.value,
+                    "task_id": task_id,
+                    **aggregate_context,
+                },
+            )

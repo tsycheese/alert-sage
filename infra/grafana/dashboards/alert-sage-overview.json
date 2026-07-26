@@ -119,16 +119,41 @@
       ],
       "title": "重试、修复与案例同步",
       "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "bars", "fillOpacity": 30, "gradientMode": "none", "hideFrom": {"legend": false, "tooltip": false, "viz": false}, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 4, "scaleDistribution": {"type": "linear"}, "showPoints": "never", "spanNulls": false, "stacking": {"group": "A", "mode": "normal"}, "thresholdsStyle": {"mode": "off"}}, "mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 21},
+      "id": 10,
+      "options": {"legend": {"calcs": [], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"editorMode": "code", "expr": "sum by (topic, status) (increase(alert_sage_outbox_deliveries_total[5m]))", "legendFormat": "{{topic}} {{status}}", "range": true, "refId": "A"}
+      ],
+      "title": "Outbox 投递结果",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "drawStyle": "line", "fillOpacity": 12, "gradientMode": "none", "hideFrom": {"legend": false, "tooltip": false, "viz": false}, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 4, "scaleDistribution": {"type": "linear"}, "showPoints": "never", "spanNulls": false, "stacking": {"group": "A", "mode": "none"}, "thresholdsStyle": {"mode": "off"}}, "mappings": [], "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 21},
+      "id": 11,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"hideZeros": false, "mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le, topic) (rate(alert_sage_outbox_delivery_duration_seconds_bucket[5m])))", "legendFormat": "delivery {{topic}}", "range": true, "refId": "A"},
+        {"editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le, topic) (rate(alert_sage_outbox_retry_delay_seconds_bucket[5m])))", "legendFormat": "retry delay {{topic}}", "range": true, "refId": "B"}
+      ],
+      "title": "Outbox 投递与退避 P95",
+      "type": "timeseries"
     }
   ],
   "refresh": "5s",
   "schemaVersion": 41,
-  "tags": ["alert-sage", "observability", "v2.3"],
+  "tags": ["alert-sage", "observability", "v2.5"],
   "templating": {"list": []},
   "time": {"from": "now-30m", "to": "now"},
   "timepicker": {},
   "timezone": "browser",
-  "title": "Alert Sage V2.3 Observability",
+  "title": "Alert Sage V2.5 Observability",
   "uid": "alert-sage-overview",
   "version": 1
 }

@@ -9,7 +9,6 @@ from app.core.errors import ApiError
 from app.db.session import get_db_session, get_session_factory
 from app.integrations.knowledge.cases import MockCasePublisher
 from app.models.enums import KnowledgeSyncStatus
-from app.observability.logging import bind_log_context
 from app.schemas.case import CaseResponse, CaseSyncAcceptedResponse
 from app.schemas.error import ApiErrorResponse
 from app.services.cases import (
@@ -18,16 +17,13 @@ from app.services.cases import (
     CaseStateConflictError,
     CaseSyncService,
 )
-from app.tasks.dispatcher import CaseDispatcher, get_case_dispatcher
 
 router = APIRouter()
 DatabaseSession = Annotated[AsyncSession, Depends(get_db_session)]
 SessionFactory = Annotated[async_sessionmaker[AsyncSession], Depends(get_session_factory)]
-Dispatcher = Annotated[CaseDispatcher, Depends(get_case_dispatcher)]
 ERROR_RESPONSES = {
     status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse},
     status.HTTP_409_CONFLICT: {"model": ApiErrorResponse},
-    status.HTTP_503_SERVICE_UNAVAILABLE: {"model": ApiErrorResponse},
     status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": ApiErrorResponse},
 }
 
@@ -64,7 +60,6 @@ async def retry_case_sync(
     alert_id: UUID,
     session: DatabaseSession,
     session_factory: SessionFactory,
-    dispatcher: Dispatcher,
 ) -> CaseSyncAcceptedResponse:
     try:
         case = await CaseQueryService(session).get_for_alert(alert_id)
@@ -82,17 +77,6 @@ async def retry_case_sync(
             message=str(exc),
             context={"alert_id": str(alert_id), "case_id": str(case.id)},
         ) from exc
-    if should_dispatch:
-        with bind_log_context(alert_id=alert_id, case_id=case.id):
-            try:
-                dispatcher.sync(case.id)
-            except Exception as exc:
-                raise ApiError(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    code="case_sync_dispatch_failed",
-                    message="case retry was stored but task dispatch failed; retry is available",
-                    context={"alert_id": str(alert_id), "case_id": str(case.id)},
-                ) from exc
     return CaseSyncAcceptedResponse(
         case_id=case.id,
         status=(KnowledgeSyncStatus.PENDING if should_dispatch else case.knowledge_sync_status),

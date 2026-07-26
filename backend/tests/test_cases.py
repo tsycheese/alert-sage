@@ -1,4 +1,3 @@
-from dataclasses import dataclass, field
 from uuid import UUID
 
 import pytest
@@ -6,18 +5,17 @@ from httpx import AsyncClient
 from sqlalchemy import func, select
 
 from app.integrations.knowledge.cases import CaseDocument
-from app.main import app
 from app.models.case import Case
 from app.models.enums import (
     HumanDecisionAction,
     KnowledgeSyncStatus,
+    OutboxStatus,
+    OutboxTopic,
     WorkflowEventType,
 )
+from app.models.outbox import OutboxMessage
 from app.models.workflow import WorkflowEvent
 from app.services.cases import CaseSyncExecutionError, CaseSyncService
-from app.tasks import cases as case_tasks
-from app.tasks.dispatcher import get_case_dispatcher
-from app.tasks.workflows import _dispatch_case_sync
 from app.workflows.alert.checkpoint import open_alert_workflow_service
 from tests.conftest import IsolatedTestDatabase
 from tests.test_alert_workflow_runtime import create_runtime_alert, decision
@@ -39,14 +37,6 @@ class FlakyPublisher(RecordingPublisher):
         if len(self.documents) == 1:
             raise TimeoutError("mock knowledge service timeout")
         return f"knowledge-document-{document.case_id}"
-
-
-@dataclass
-class FakeCaseDispatcher:
-    case_ids: list[UUID] = field(default_factory=list)
-
-    def sync(self, case_id: UUID) -> None:
-        self.case_ids.append(case_id)
 
 
 async def create_approved_case(database: IsolatedTestDatabase, suffix: str) -> tuple[UUID, UUID]:
@@ -97,9 +87,8 @@ async def test_approval_creates_one_structured_case(
 
 
 @pytest.mark.asyncio
-async def test_completed_workflow_dispatches_case_sync_task(
+async def test_approval_enqueues_case_sync_in_same_transaction(
     isolated_test_database: IsolatedTestDatabase,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     alert = await create_runtime_alert(
         isolated_test_database.session_factory,
@@ -119,20 +108,17 @@ async def test_completed_workflow_dispatches_case_sync_task(
             actor="case-reviewer@example.com",
         )
 
-    dispatched: list[tuple[list[str], str, dict[str, str]]] = []
-
-    def record_dispatch(*, args: list[str], task_id: str, headers: dict[str, str]) -> None:
-        dispatched.append((args, task_id, headers))
-
-    monkeypatch.setattr(case_tasks.run_case_sync, "apply_async", record_dispatch)
-    _dispatch_case_sync(completed)
-
     assert completed.case_id is not None
-    assert dispatched[0][:2] == (
-        [str(completed.case_id)],
-        f"case-sync-{completed.case_id}",
-    )
-    assert dispatched[0][2] == {}
+    async with isolated_test_database.session_factory() as session:
+        message = await session.scalar(
+            select(OutboxMessage).where(
+                OutboxMessage.topic == OutboxTopic.CASE_SYNC,
+                OutboxMessage.aggregate_id == completed.case_id,
+            )
+        )
+    assert message is not None
+    assert message.status == OutboxStatus.PENDING
+    assert message.payload == {"case_id": str(completed.case_id)}
 
 
 @pytest.mark.asyncio
@@ -192,7 +178,7 @@ async def test_failed_case_sync_can_be_retried(
         assert failed.knowledge_sync_status == KnowledgeSyncStatus.FAILED
         assert failed.sync_error_code == "TimeoutError"
 
-    assert await service.prepare_retry(case_id) is True
+    assert await service.prepare_retry(case_id, enqueue=False) is True
     synced = await service.execute(case_id)
 
     assert synced.status == KnowledgeSyncStatus.SYNCED
@@ -216,13 +202,8 @@ async def test_case_api_queries_and_dispatches_retry(
     isolated_test_database: IsolatedTestDatabase,
 ) -> None:
     alert_id, case_id = await create_approved_case(isolated_test_database, "api")
-    dispatcher = FakeCaseDispatcher()
-    app.dependency_overrides[get_case_dispatcher] = lambda: dispatcher
-    try:
-        fetched = await api_client.get(f"/api/v1/alerts/{alert_id}/case")
-        retried = await api_client.post(f"/api/v1/alerts/{alert_id}/case/retry")
-    finally:
-        app.dependency_overrides.pop(get_case_dispatcher, None)
+    fetched = await api_client.get(f"/api/v1/alerts/{alert_id}/case")
+    retried = await api_client.post(f"/api/v1/alerts/{alert_id}/case/retry")
 
     assert fetched.status_code == 200
     assert fetched.json()["id"] == str(case_id)
@@ -233,7 +214,19 @@ async def test_case_api_queries_and_dispatches_retry(
         "status": "pending",
         "dispatched": True,
     }
-    assert dispatcher.case_ids == [case_id]
+    async with isolated_test_database.session_factory() as session:
+        messages = list(
+            await session.scalars(
+                select(OutboxMessage)
+                .where(
+                    OutboxMessage.topic == OutboxTopic.CASE_SYNC,
+                    OutboxMessage.aggregate_id == case_id,
+                )
+                .order_by(OutboxMessage.created_at)
+            )
+        )
+    assert len(messages) == 2
+    assert messages[-1].idempotency_key.endswith("delivery-2")
 
 
 @pytest.mark.asyncio

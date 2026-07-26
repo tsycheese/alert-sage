@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.enums import KnowledgeSyncStatus
 
@@ -31,4 +31,6 @@ class CaseResponse(BaseModel):
 class CaseSyncAcceptedResponse(BaseModel):
     case_id: UUID
     status: KnowledgeSyncStatus
-    dispatched: bool
+    dispatched: bool = Field(
+        description="Whether this request created a new durable Outbox delivery intent."
+    )

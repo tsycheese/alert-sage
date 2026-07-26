@@ -67,3 +67,15 @@ class HumanDecisionAction(StrEnum):
     APPROVE = "approve"
     REJECT = "reject"
     REANALYZE = "reanalyze"
+
+
+class OutboxStatus(StrEnum):
+    PENDING = "pending"
+    PUBLISHED = "published"
+
+
+class OutboxTopic(StrEnum):
+    WORKFLOW_START = "workflow.start"
+    WORKFLOW_RESUME = "workflow.resume"
+    WORKFLOW_RETRY = "workflow.retry"
+    CASE_SYNC = "case.sync"

@@ -91,6 +91,23 @@ CASE_SYNC_DURATION = Histogram(
     ("provider",),
     buckets=(0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 180),
 )
+OUTBOX_DELIVERIES = Counter(
+    "alert_sage_outbox_deliveries_total",
+    "Transactional outbox publish attempts by bounded topic and result status.",
+    ("topic", "status"),
+)
+OUTBOX_DELIVERY_DURATION = Histogram(
+    "alert_sage_outbox_delivery_duration_seconds",
+    "Transactional outbox publish duration by bounded topic.",
+    ("topic",),
+    buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 15),
+)
+OUTBOX_RETRY_DELAY = Histogram(
+    "alert_sage_outbox_retry_delay_seconds",
+    "Scheduled transactional outbox retry delay by bounded topic.",
+    ("topic",),
+    buckets=(1, 2, 5, 10, 30, 60, 120, 300),
+)
 
 
 def label_value(value: object) -> str:
@@ -206,5 +223,21 @@ def observe_case_sync(*, provider: str, status: str, duration_seconds: float) ->
     def record() -> None:
         CASE_SYNCS.labels(provider=provider, status=status).inc()
         CASE_SYNC_DURATION.labels(provider=provider).observe(duration_seconds)
+
+    _record(record)
+
+
+def observe_outbox_delivery(
+    *,
+    topic: str,
+    status: str,
+    duration_seconds: float,
+    retry_delay_seconds: float | None = None,
+) -> None:
+    def record() -> None:
+        OUTBOX_DELIVERIES.labels(topic=topic, status=status).inc()
+        OUTBOX_DELIVERY_DURATION.labels(topic=topic).observe(duration_seconds)
+        if retry_delay_seconds is not None:
+            OUTBOX_RETRY_DELAY.labels(topic=topic).observe(retry_delay_seconds)
 
     _record(record)

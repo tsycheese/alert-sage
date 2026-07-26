@@ -14,12 +14,12 @@
 | --- | --- | --- |
 | Web | React、TypeScript、Vite、Ant Design | 告警列表、详情、确认页面 |
 | Web 数据层 | TanStack Query、SSE | 查询缓存、状态刷新、服务端事件 |
-| API | FastAPI、Pydantic | 接口、校验、鉴权和任务投递 |
+| API | FastAPI、Pydantic | 接口、校验、鉴权和持久化投递意图 |
 | 数据访问 | SQLAlchemy、Alembic | ORM 和数据库迁移 |
 | Agent | LangGraph | 告警工作流、人工中断和恢复 |
-| 异步执行 | Celery | 启动/恢复工作流及后台任务 |
+| 异步执行 | Celery Worker、Celery Beat Relay | 发布 Outbox、启动/恢复工作流及后台任务 |
 | 临时基础设施 | Redis | Celery Broker、缓存、锁和事件发布 |
-| 业务存储 | PostgreSQL | 告警、报告、决策、案例和审计事件 |
+| 业务存储 | PostgreSQL | 告警、报告、决策、案例、审计事件和 Outbox |
 | 工作流快照 | LangGraph PostgreSQL Checkpointer | checkpoint 与恢复 |
 | 第一版 RAG | Dify Knowledge Base API | 文档管理、分段和检索 |
 | 进阶 RAG | pgvector | 自研混合检索与效果对比 |
@@ -37,10 +37,11 @@
 - Celery 决定“任务在哪里、何时执行”，负责把 HTTP 请求与耗时工作解耦。
 - Celery 的任务结果不是业务事实；页面状态来自 PostgreSQL。
 - 工作流暂停时 Celery 任务结束，人工决策到达后创建新的恢复任务。
+- API 和工作流不直接承担 Broker 双写；它们在业务事务内写入 Outbox，Beat 周期唤醒 Relay，由 Worker 发布领域任务。
 
 ### 3.2 PostgreSQL 与 Redis
 
-- PostgreSQL 保存告警、运行记录、节点事件、报告、决策和案例。
+- PostgreSQL 保存告警、运行记录、节点事件、报告、决策、案例和待发布的 Outbox 消息。
 - LangGraph Checkpointer 在 PostgreSQL 保存可恢复执行快照。
 - Redis 用于队列、缓存、短期锁和事件广播，可清空、可重建。
 - 告警幂等最终由数据库唯一约束保证，Redis 只能作为快速拦截层。
@@ -92,11 +93,13 @@ V2.3 只使用 Counter 和 Histogram，避免 Python 多进程模式不支持或
 ```mermaid
 flowchart TB
     WEB["React Web"] --> API["FastAPI"]
-    API --> PG["PostgreSQL 业务数据"]
-    API --> REDIS["Redis / Celery Broker"]
+    API --> PG["PostgreSQL 业务数据 + Outbox"]
     API --> SSE["SSE 事件接口"]
 
+    BEAT["Celery Beat Relay"] -->|周期唤醒| REDIS["Redis / Celery Broker"]
     REDIS --> WORKER["Celery Worker"]
+    WORKER -->|领取 / 发布 Outbox| PG
+    WORKER -->|发布领域任务| REDIS
     WORKER --> GRAPH["LangGraph 告警工作流"]
 
     GRAPH --> CHECKPOINT["PostgreSQL Checkpointer"]
@@ -136,7 +139,7 @@ flowchart TD
 
 `human_review` 使用持久化 checkpoint。恢复执行时节点可能重新进入，因此暂停前的写操作必须幂等，外部副作用应放在人工批准之后。
 
-V1.4 在 `finalize` 持久化批准终态时，同一数据库事务内生成一条结构化 `cases` 记录。事务提交后由独立 Celery 任务调用 `CasePublisher`；同步失败不会回滚已经确认的业务事实，也不会把外部供应商状态混入 LangGraph checkpoint。
+V2.5 在 `finalize` 持久化批准终态时，同一数据库事务内生成结构化 `cases` 记录与 `case.sync` Outbox 消息。Relay 发布后由独立 Celery 任务调用 `CasePublisher`；同步失败不会回滚已经确认的业务事实，也不会把外部供应商状态混入 LangGraph checkpoint。
 
 ## 6. Web 与 API
 
@@ -239,6 +242,12 @@ API 为每个请求生成 UUID `request_id`，在响应 `X-Request-ID` 中返回
 
 日志只写容器标准输出，是可丢失的运行态数据；`workflow_events` 仍是时间线、审计与 SSE 补发的业务事实。新事件在 `payload.correlation` 中保存产生它的请求 ID，页面据此展示跨请求阶段。相邻事件的时间差只代表阶段间隔，不能代替节点精确耗时；精确耗时由结构化日志和 Prometheus Histogram 提供。当前不引入 Loki、Elasticsearch 或 OpenTelemetry Collector。
 
+### 6.5 V2.5 事务性 Outbox
+
+工作流启动、人工恢复、失败重试和案例同步均在业务事实变更的同一事务中创建严格类型的 Outbox 消息。API 的兼容字段 `dispatched` 表示“本次请求新建了持久化投递意图”，不表示 Redis 已确认接收；幂等重放返回 `false`。
+
+Relay 使用 `FOR UPDATE SKIP LOCKED` 分批领取到期消息。发布失败保持 `pending`，仅记录脱敏错误类型，并以有上限的指数退避重试；发布成功但数据库提交前崩溃时允许重复投递，因此整体为至少一次语义。消费者通过业务状态锁、唯一约束、事件幂等键和供应商幂等键吸收重复。详细决策见 [ADR 0010](adr/0010-transactional-outbox.md)。
+
 ## 7. 建议目录结构
 
 ```text
@@ -263,7 +272,7 @@ alert-sage/
 │  │  ├─ integrations/
 │  │  │  ├─ knowledge/           # Dify/Mock 知识检索与案例发布适配器
 │  │  │  └─ llm/                 # OpenAI-compatible/Mock 诊断模型适配器
-│  │  ├─ tasks/                  # Celery 任务与 Worker 入口
+│  │  ├─ tasks/                  # Celery 领域任务、Outbox Relay 与 Worker 入口
 │  │  └─ observability/          # 指标、追踪和审计辅助代码
 │  ├─ migrations/                # Alembic 迁移
 │  └─ tests/
@@ -302,12 +311,14 @@ V2.3 已提供以下指标族：
 - LLM：按供应商、模型和操作记录请求结果、耗时、传输重试和结构化输出修复。
 - 知识服务：Dify/Mock 检索与发布的结果、耗时及检索片段数量。
 - 案例同步：按知识供应商和同步终态记录任务总数与耗时。
+- Outbox：按消息主题记录发布成功/失败、投递耗时和失败后的退避时长。
 
-Dashboard 展示 API 速率/P95、工作流和节点 P95、工具 P95、LLM 与知识服务 P95、Worker 进程累计模型成功率、重试、输出修复及案例同步失败。V2.4 已补充结构化日志关联 ID 和以 PostgreSQL 审计事件为事实来源的单次诊断可视化时间线；二者与聚合指标互补，不能相互替代。
+Dashboard 以十一个面板展示 API 速率/P95、工作流和节点 P95、工具 P95、LLM 与知识服务 P95、Worker 进程累计模型成功率、重试、输出修复、案例同步及 Outbox 投递。V2.4 已补充结构化日志关联 ID 和以 PostgreSQL 审计事件为事实来源的单次诊断可视化时间线；二者与聚合指标互补，不能相互替代。
 
 ## 9. 可靠性约束
 
-- API 先提交数据库事务，再投递任务；投递失败应记录并允许补偿重试。
+- 业务事实与 Outbox 投递意图必须在同一 PostgreSQL 事务中提交；Broker 失败不得回滚业务事实或丢失投递意图。
+- Outbox 与 Celery 提供至少一次投递，所有消费者必须能安全处理重复执行。
 - 每次工具调用使用稳定的 `idempotency_key`。
 - LLM 输出必须经过结构化 Schema 校验，失败时允许修复或重试。
 - LLM 根因只能引用应用生成的证据 ID；模型不得创建来源或覆盖模型/Prompt 版本元数据。

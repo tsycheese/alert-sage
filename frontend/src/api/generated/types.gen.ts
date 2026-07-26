@@ -245,6 +245,8 @@ export type CaseSyncAcceptedResponse = {
     case_id: string;
     /**
      * Dispatched
+     *
+     * Whether this request created a new durable Outbox delivery intent.
      */
     dispatched: boolean;
     status: KnowledgeSyncStatus;
@@ -466,6 +468,8 @@ export type KnowledgeSyncStatus = 'pending' | 'syncing' | 'synced' | 'failed';
 export type WorkflowAcceptedResponse = {
     /**
      * Dispatched
+     *
+     * Whether this request created a new durable Outbox delivery intent.
      */
     dispatched: boolean;
     status: WorkflowRunStatus;
@@ -768,10 +772,6 @@ export type GetCaseApiV1AlertsAlertIdCaseGetErrors = {
      * Unprocessable Entity
      */
     422: ApiErrorResponse;
-    /**
-     * Service Unavailable
-     */
-    503: ApiErrorResponse;
 };
 
 export type GetCaseApiV1AlertsAlertIdCaseGetError = GetCaseApiV1AlertsAlertIdCaseGetErrors[keyof GetCaseApiV1AlertsAlertIdCaseGetErrors];
@@ -810,10 +810,6 @@ export type RetryCaseSyncApiV1AlertsAlertIdCaseRetryPostErrors = {
      * Unprocessable Entity
      */
     422: ApiErrorResponse;
-    /**
-     * Service Unavailable
-     */
-    503: ApiErrorResponse;
 };
 
 export type RetryCaseSyncApiV1AlertsAlertIdCaseRetryPostError = RetryCaseSyncApiV1AlertsAlertIdCaseRetryPostErrors[keyof RetryCaseSyncApiV1AlertsAlertIdCaseRetryPostErrors];
@@ -852,10 +848,6 @@ export type SubmitWorkflowDecisionApiV1AlertsAlertIdDecisionsPostErrors = {
      * Unprocessable Entity
      */
     422: ApiErrorResponse;
-    /**
-     * Service Unavailable
-     */
-    503: ApiErrorResponse;
 };
 
 export type SubmitWorkflowDecisionApiV1AlertsAlertIdDecisionsPostError = SubmitWorkflowDecisionApiV1AlertsAlertIdDecisionsPostErrors[keyof SubmitWorkflowDecisionApiV1AlertsAlertIdDecisionsPostErrors];
@@ -903,10 +895,6 @@ export type ListWorkflowEventsApiV1AlertsAlertIdEventsGetErrors = {
      * Unprocessable Entity
      */
     422: ApiErrorResponse;
-    /**
-     * Service Unavailable
-     */
-    503: ApiErrorResponse;
 };
 
 export type ListWorkflowEventsApiV1AlertsAlertIdEventsGetError = ListWorkflowEventsApiV1AlertsAlertIdEventsGetErrors[keyof ListWorkflowEventsApiV1AlertsAlertIdEventsGetErrors];
@@ -945,10 +933,6 @@ export type RetryWorkflowApiV1AlertsAlertIdRetryPostErrors = {
      * Unprocessable Entity
      */
     422: ApiErrorResponse;
-    /**
-     * Service Unavailable
-     */
-    503: ApiErrorResponse;
 };
 
 export type RetryWorkflowApiV1AlertsAlertIdRetryPostError = RetryWorkflowApiV1AlertsAlertIdRetryPostErrors[keyof RetryWorkflowApiV1AlertsAlertIdRetryPostErrors];
@@ -993,10 +977,6 @@ export type StreamWorkflowEventsApiV1AlertsAlertIdStreamGetErrors = {
      * Unprocessable Entity
      */
     422: ApiErrorResponse;
-    /**
-     * Service Unavailable
-     */
-    503: ApiErrorResponse;
 };
 
 export type StreamWorkflowEventsApiV1AlertsAlertIdStreamGetError = StreamWorkflowEventsApiV1AlertsAlertIdStreamGetErrors[keyof StreamWorkflowEventsApiV1AlertsAlertIdStreamGetErrors];
@@ -1033,10 +1013,6 @@ export type GetWorkflowApiV1AlertsAlertIdWorkflowGetErrors = {
      * Unprocessable Entity
      */
     422: ApiErrorResponse;
-    /**
-     * Service Unavailable
-     */
-    503: ApiErrorResponse;
 };
 
 export type GetWorkflowApiV1AlertsAlertIdWorkflowGetError = GetWorkflowApiV1AlertsAlertIdWorkflowGetErrors[keyof GetWorkflowApiV1AlertsAlertIdWorkflowGetErrors];
@@ -1075,10 +1051,6 @@ export type StartWorkflowApiV1AlertsAlertIdWorkflowPostErrors = {
      * Unprocessable Entity
      */
     422: ApiErrorResponse;
-    /**
-     * Service Unavailable
-     */
-    503: ApiErrorResponse;
 };
 
 export type StartWorkflowApiV1AlertsAlertIdWorkflowPostError = StartWorkflowApiV1AlertsAlertIdWorkflowPostErrors[keyof StartWorkflowApiV1AlertsAlertIdWorkflowPostErrors];

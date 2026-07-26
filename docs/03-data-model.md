@@ -1,6 +1,6 @@
 # 核心数据模型
 
-> 实现状态：V1.4 已将告警、工作流、人工确认、结构化案例和知识同步状态接入 API、Celery Worker、SSE 与 Web。
+> 实现状态：V2.5 已将告警、工作流、人工确认、结构化案例、知识同步状态和可靠投递意图接入 PostgreSQL、API、Celery Worker、Relay、SSE 与 Web。
 
 ## 1. 建模目标
 
@@ -10,6 +10,7 @@
 - 多次执行、重试和重新分析。
 - 节点及工具调用可观测。
 - 人工决策可审计。
+- 业务事实与异步投递意图原子提交。
 - 诊断报告版本化。
 - 已确认案例沉淀。
 - LangGraph checkpoint 与业务状态分离。
@@ -271,6 +272,21 @@ failed
 
 案例创建与批准后的终态流转位于同一数据库事务，并追加 `case_created` 事件。同步任务使用稳定幂等键 `case-sync:{case_id}`，依次追加开始、成功或失败事件；重复执行已同步案例时直接返回已有结果。同步失败不影响告警工作流完成，可通过 API 重新投递。
 
+### 3.8 `outbox_messages`
+
+Outbox 保存已经随业务事务提交、但尚未确认发布到 Celery Broker 的内部消息。允许的 `topic` 只有 `workflow.start`、`workflow.resume`、`workflow.retry` 和 `case.sync`；`payload` 在发布前必须通过对应的严格 Pydantic Schema。
+
+核心字段：
+
+- `idempotency_key`：全局唯一，防止同一业务动作产生多条投递意图。
+- `aggregate_id`：对应工作流运行或案例 UUID，配合 `topic` 用于检索投递历史。
+- `status`：`pending` 或 `published`；业务完成状态不从该字段推断。
+- `attempts`、`available_at`：记录发布尝试次数与指数退避后的下次可领取时间。
+- `correlation`：只保存白名单关联 ID，供 Celery headers 和结构化日志继续传播。
+- `published_at`、`last_error_type`：记录发布结果；错误正文、密钥和供应商响应不得入库。
+
+Relay 按 `available_at, created_at` 读取 `pending` 消息，并使用部分索引和 `FOR UPDATE SKIP LOCKED` 支持并发领取。消息发布和标记 `published` 之间仍可能发生进程崩溃，因此该表保证投递意图不丢失，不保证严格一次消费。
+
 ## 4. LangGraph 状态
 
 LangGraph State 是执行期间的数据载体，不直接等同于数据库 ORM 模型。V1.3A 使用 Pydantic 严格模型作为运行时边界，未来节点接收其 JSON 模式输出：
@@ -329,6 +345,7 @@ running / reanalyzing -> failed -> running
 | 告警是否存在、当前业务状态 | PostgreSQL 业务表 |
 | 工作流恢复位置及节点快照 | LangGraph Checkpointer |
 | 页面时间线和审计记录 | `workflow_events` |
+| 任务是否仍需投递 | `outbox_messages` |
 | 任务是否正在某 Worker 执行 | Celery/Redis 临时状态 |
 | 实时页面通知 | Redis Pub/Sub，断线后由事件表补偿 |
 
@@ -338,7 +355,6 @@ Celery 和 Redis 状态不可用于判断告警最终是否完成。
 
 以下模型在第一版闭环稳定后再加入：
 
-- `outbox_messages`：解决数据库提交与 Celery 投递之间的双写一致性。
 - `knowledge_documents`、`knowledge_chunks`：自研 pgvector 检索。
 - `rag_evaluation_sets`、`rag_evaluation_results`：检索效果评测。
 - `users`、`roles`：真实认证与权限。

@@ -10,7 +10,7 @@ settings = get_settings()
 celery_app = Celery(
     "alert_sage",
     broker=settings.celery_broker_url,
-    include=["app.tasks.workflows", "app.tasks.cases"],
+    include=["app.tasks.workflows", "app.tasks.cases", "app.tasks.outbox"],
 )
 celery_app.conf.update(
     task_serializer="json",
@@ -22,6 +22,13 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
     timezone="UTC",
     enable_utc=True,
+    beat_schedule={
+        "publish-transactional-outbox": {
+            "task": "alert_sage.outbox.publish",
+            "schedule": settings.outbox_poll_interval_seconds,
+            "options": {"expires": settings.outbox_poll_interval_seconds},
+        }
+    },
 )
 configure_worker_metrics()
 
@@ -30,7 +37,7 @@ configure_worker_metrics()
 def configure_worker_logging(**_: object) -> None:
     worker_settings = get_settings()
     configure_logging(
-        service="alert-sage-worker",
+        service=worker_settings.celery_log_service,
         environment=worker_settings.environment,
         level=worker_settings.log_level,
     )

@@ -11,7 +11,8 @@ from prometheus_client import REGISTRY
 
 from app.integrations.knowledge.retrieval import DocumentChunk
 from app.main import app
-from app.models.enums import KnowledgeSyncStatus
+from app.models.enums import KnowledgeSyncStatus, OutboxTopic
+from app.models.outbox import OutboxMessage
 from app.observability.adapters import InstrumentedKnowledgeRetriever
 from app.observability.logging import (
     JsonLogFormatter,
@@ -24,7 +25,7 @@ from app.observability.nodes import observed_node
 from app.services.cases import CaseSyncResult
 from app.tasks import cases as case_tasks
 from app.tasks import workflows as workflow_tasks
-from app.tasks.dispatcher import CeleryWorkflowDispatcher
+from app.tasks.dispatcher import CeleryOutboxPublisher
 from scripts.run_worker import prepare_multiprocess_directory
 
 
@@ -124,7 +125,7 @@ def test_json_log_formatter_redacts_credentials_and_keeps_correlation() -> None:
     assert "database-secret" not in serialized
 
 
-def test_dispatcher_propagates_whitelisted_celery_headers(
+def test_outbox_publisher_propagates_whitelisted_celery_headers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, object] = {}
@@ -135,18 +136,29 @@ def test_dispatcher_propagates_whitelisted_celery_headers(
     monkeypatch.setattr(workflow_tasks.run_workflow_start, "apply_async", record_dispatch)
     request_id = "50000000-0000-0000-0000-000000000005"
     workflow_run_id = UUID("60000000-0000-0000-0000-000000000006")
-    with bind_log_context(
-        request_id=request_id,
-        alert_id="70000000-0000-0000-0000-000000000007",
-        thread_id="thread-safe-001",
-    ):
-        CeleryWorkflowDispatcher().start(workflow_run_id)
+    message_id = UUID("80000000-0000-0000-0000-000000000008")
+    CeleryOutboxPublisher().publish(
+        OutboxMessage(
+            id=message_id,
+            topic=OutboxTopic.WORKFLOW_START,
+            aggregate_id=workflow_run_id,
+            idempotency_key=f"workflow:start:{workflow_run_id}",
+            payload={"workflow_run_id": str(workflow_run_id)},
+            correlation={
+                "request_id": request_id,
+                "alert_id": "70000000-0000-0000-0000-000000000007",
+                "thread_id": "thread-safe-001",
+            },
+        )
+    )
 
     headers = captured["headers"]
     assert isinstance(headers, dict)
     assert headers["alert_sage_request_id"] == request_id
     assert headers["alert_sage_thread_id"] == "thread-safe-001"
+    assert headers["alert_sage_outbox_message_id"] == str(message_id)
     assert all("secret" not in key for key in headers)
+    assert captured["task_id"] == f"outbox-{message_id}"
     restored = correlation_from_celery_headers(headers)
     assert restored["request_id"] == request_id
 

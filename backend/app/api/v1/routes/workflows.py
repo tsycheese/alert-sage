@@ -12,7 +12,6 @@ from app.core.config import get_settings
 from app.core.errors import ApiError
 from app.db.session import get_db_session, get_session_factory
 from app.models.enums import WorkflowRunStatus
-from app.observability.logging import bind_log_context
 from app.schemas.error import ApiErrorResponse
 from app.schemas.workflow import (
     DiagnosisReportResponse,
@@ -26,7 +25,6 @@ from app.schemas.workflow import (
     WorkflowStartCommand,
 )
 from app.services.workflows import AlertWorkflowNotFoundError, WorkflowQueryService
-from app.tasks.dispatcher import WorkflowDispatcher, get_workflow_dispatcher
 from app.workflows.alert.service import (
     AlertWorkflowService,
     WorkflowIdempotencyConflictError,
@@ -37,11 +35,9 @@ from app.workflows.alert.service import (
 router = APIRouter()
 DatabaseSession = Annotated[AsyncSession, Depends(get_db_session)]
 SessionFactory = Annotated[async_sessionmaker[AsyncSession], Depends(get_session_factory)]
-Dispatcher = Annotated[WorkflowDispatcher, Depends(get_workflow_dispatcher)]
 ERROR_RESPONSES = {
     status.HTTP_404_NOT_FOUND: {"model": ApiErrorResponse},
     status.HTTP_409_CONFLICT: {"model": ApiErrorResponse},
-    status.HTTP_503_SERVICE_UNAVAILABLE: {"model": ApiErrorResponse},
     status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": ApiErrorResponse},
 }
 TERMINAL_STATUSES = {WorkflowRunStatus.COMPLETED, WorkflowRunStatus.REJECTED}
@@ -80,7 +76,6 @@ async def start_workflow(
     response: Response,
     session: DatabaseSession,
     session_factory: SessionFactory,
-    dispatcher: Dispatcher,
 ) -> WorkflowAcceptedResponse:
     service = AlertWorkflowService(session_factory=session_factory, graph=None)
     try:
@@ -94,22 +89,6 @@ async def start_workflow(
         WorkflowIdempotencyConflictError,
     ) as exc:
         raise _workflow_error(exc, alert_id) from exc
-    if prepared.created:
-        with bind_log_context(
-            alert_id=prepared.alert_id,
-            workflow_run_id=prepared.workflow_run_id,
-            thread_id=prepared.thread_id,
-        ):
-            try:
-                dispatcher.start(prepared.workflow_run_id)
-            except Exception as exc:
-                await service.mark_dispatch_failed(prepared.workflow_run_id, exc)
-                raise ApiError(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    code="workflow_dispatch_failed",
-                    message="workflow was stored but task dispatch failed; retry is available",
-                    context={"workflow_run_id": str(prepared.workflow_run_id)},
-                ) from exc
     response.headers["Location"] = f"/api/v1/alerts/{alert_id}/workflow"
     run = await WorkflowQueryService(session).latest_run(alert_id)
     return WorkflowAcceptedResponse(
@@ -173,7 +152,6 @@ async def submit_workflow_decision(
     command: HumanDecisionRequest,
     session: DatabaseSession,
     session_factory: SessionFactory,
-    dispatcher: Dispatcher,
 ) -> WorkflowAcceptedResponse:
     try:
         run = await WorkflowQueryService(session).latest_run(alert_id)
@@ -191,24 +169,6 @@ async def submit_workflow_decision(
         WorkflowIdempotencyConflictError,
     ) as exc:
         raise _workflow_error(exc, alert_id) from exc
-    if decision_id is not None:
-        with bind_log_context(
-            alert_id=alert_id,
-            workflow_run_id=run.id,
-            thread_id=run.thread_id,
-        ):
-            try:
-                dispatcher.resume(run.id, decision_id)
-            except Exception as exc:
-                raise ApiError(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    code="workflow_dispatch_failed",
-                    message="decision was stored but task dispatch failed; replay the same request",
-                    context={
-                        "workflow_run_id": str(run.id),
-                        "decision_id": str(decision_id),
-                    },
-                ) from exc
     await session.refresh(run)
     return WorkflowAcceptedResponse(
         workflow_run_id=run.id,
@@ -227,37 +187,22 @@ async def retry_workflow(
     alert_id: UUID,
     session: DatabaseSession,
     session_factory: SessionFactory,
-    dispatcher: Dispatcher,
 ) -> WorkflowAcceptedResponse:
     try:
         run = await WorkflowQueryService(session).latest_run(alert_id)
-        await AlertWorkflowService(session_factory=session_factory, graph=None).prepare_retry(
-            run.id
-        )
+        delivery_created = await AlertWorkflowService(
+            session_factory=session_factory, graph=None
+        ).prepare_retry(run.id)
     except (
         AlertWorkflowNotFoundError,
         WorkflowRunNotFoundError,
         WorkflowStateConflictError,
     ) as exc:
         raise _workflow_error(exc, alert_id) from exc
-    with bind_log_context(
-        alert_id=alert_id,
-        workflow_run_id=run.id,
-        thread_id=run.thread_id,
-    ):
-        try:
-            dispatcher.retry(run.id)
-        except Exception as exc:
-            raise ApiError(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                code="workflow_dispatch_failed",
-                message="retry was stored but task dispatch failed; retry this request",
-                context={"workflow_run_id": str(run.id)},
-            ) from exc
     return WorkflowAcceptedResponse(
         workflow_run_id=run.id,
         status=WorkflowRunStatus.QUEUED,
-        dispatched=True,
+        dispatched=delivery_created,
     )
 
 

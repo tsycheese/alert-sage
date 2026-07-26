@@ -6,7 +6,7 @@ Alert Sage 是一个面向运维场景的 AI 告警诊断助手，以“告警�
 
 ## 当前状态
 
-`V2.3 可观测诊断链路`：在 V2.2 的 Dify 检索、DeepSeek 结构化诊断、Web 人工批准和案例回写闭环之上，API 与 Celery Worker 分别暴露 Prometheus 指标；工作流、七个节点、上下文工具、LLM、RAG 和案例同步均可观察吞吐、状态和耗时。Grafana 数据源与九面板 Dashboard 通过文件自动配置，Mock 模式继续支持离线开发。
+`V2.5 可靠任务投递闭环`：工作流启动、人工恢复、失败重试和案例同步都会把业务事实与 Outbox 投递意图原子写入 PostgreSQL；Celery Beat Relay 分批发布到 Redis，Broker 短暂不可用时自动退避并在恢复后续跑。全链路继续支持 DeepSeek、Dify、结构化关联日志、诊断时间线和十一面板 Grafana Dashboard，Mock 模式可离线开发。
 
 ## 技术栈
 
@@ -16,7 +16,7 @@ Alert Sage 是一个面向运维场景的 AI 告警诊断助手，以“告警�
 - 交付：Docker Compose、pytest、Vitest、Prometheus、Grafana
 - 外部知识：Dify Knowledge Base API（可替换）
 - 诊断模型：DeepSeek OpenAI-compatible API（可替换）
-- 后续：结构化日志与关联 ID、事务性 Outbox、RAG 评测
+- 后续：RAG 固定评测集、pgvector 对照实现、认证与 RBAC
 
 ## Docker 一键启动
 

@@ -14,11 +14,7 @@ from app.core.config import get_settings
 from app.integrations.knowledge.factory import create_knowledge_retriever
 from app.integrations.llm.factory import create_diagnostic_model
 from app.models.workflow import WorkflowRun
-from app.observability.logging import (
-    bind_log_context,
-    celery_correlation_headers,
-    correlation_from_celery_headers,
-)
+from app.observability.logging import bind_log_context, correlation_from_celery_headers
 from app.observability.metrics import observe_workflow
 from app.tasks.celery_app import celery_app
 from app.workflows.alert.adapters import default_context_providers
@@ -131,14 +127,13 @@ def run_workflow_start(task: Any, workflow_run_id: str) -> None:
             "task_id": getattr(task.request, "id", None),
         }
     ):
-        result = asyncio.run(
+        asyncio.run(
             _run_observed(
                 run_id,
                 "start",
                 lambda service: service.execute_start(run_id),
             )
         )
-        _dispatch_case_sync(result)
 
 
 @celery_app.task(name="alert_sage.workflow.resume", bind=True)
@@ -152,7 +147,7 @@ def run_workflow_resume(task: Any, workflow_run_id: str, decision_id: str) -> No
             "task_id": getattr(task.request, "id", None),
         }
     ):
-        result = asyncio.run(
+        asyncio.run(
             _run_observed(
                 run_id,
                 "resume",
@@ -162,7 +157,6 @@ def run_workflow_resume(task: Any, workflow_run_id: str, decision_id: str) -> No
                 ),
             )
         )
-        _dispatch_case_sync(result)
 
 
 @celery_app.task(name="alert_sage.workflow.retry", bind=True)
@@ -175,23 +169,10 @@ def run_workflow_retry(task: Any, workflow_run_id: str) -> None:
             "task_id": getattr(task.request, "id", None),
         }
     ):
-        result = asyncio.run(
+        asyncio.run(
             _run_observed(
                 run_id,
                 "retry",
                 lambda service: service.execute_retry(run_id),
             )
         )
-        _dispatch_case_sync(result)
-
-
-def _dispatch_case_sync(result: object | None) -> None:
-    if not isinstance(result, WorkflowExecutionResult) or result.case_id is None:
-        return
-    from app.tasks.cases import run_case_sync
-
-    run_case_sync.apply_async(
-        args=[str(result.case_id)],
-        task_id=f"case-sync-{result.case_id}",
-        headers=celery_correlation_headers(),
-    )
