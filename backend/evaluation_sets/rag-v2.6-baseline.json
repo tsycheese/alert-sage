@@ -1,0 +1,268 @@
+{
+  "schema_version": "1.0",
+  "id": "alert-sage-rag-baseline",
+  "version": "1.0.0",
+  "name": "Alert Sage RAG baseline",
+  "description": "A bilingual, document-level retrieval benchmark for representative operations incidents.",
+  "documents": [
+    {
+      "key": "checkout-cpu-db-regression",
+      "case_id": "11111111-1111-4111-8111-111111111111",
+      "title": "Checkout high CPU after database query regression",
+      "symptom": "Checkout API CPU remained above 90 percent and request latency increased after a release.",
+      "root_cause": "A changed SQL query caused sequential scans and saturated the database-bound request path.",
+      "resolution": "Compare EXPLAIN ANALYZE plans, restore the previous index-friendly query and verify CPU and latency recovery.",
+      "tags": ["checkout", "high-cpu", "database", "query-regression"]
+    },
+    {
+      "key": "payment-memory-leak",
+      "case_id": "22222222-2222-4222-8222-222222222222",
+      "title": "Payment worker memory leak and OOM restart",
+      "symptom": "Payment workers showed steadily growing heap usage and were repeatedly terminated by the OOM killer.",
+      "root_cause": "A release retained completed payment payloads in an unbounded in-process cache.",
+      "resolution": "Disable the cache path, deploy the bounded cache fix and compare heap profiles before and after the release.",
+      "tags": ["payment", "memory-leak", "oom", "cache"]
+    },
+    {
+      "key": "inventory-redis-pool-exhaustion",
+      "case_id": "33333333-3333-4333-8333-333333333333",
+      "title": "Inventory Redis connection pool exhaustion",
+      "symptom": "Inventory requests timed out while Redis connection wait time and active connections reached their limits.",
+      "root_cause": "A missing client cleanup path leaked Redis connections until the application pool was exhausted.",
+      "resolution": "Close clients on every request path, raise pool observability and restart affected instances after deploying the fix.",
+      "tags": ["inventory", "redis", "connection-pool", "timeout"]
+    },
+    {
+      "key": "order-downstream-timeout",
+      "case_id": "44444444-4444-4444-8444-444444444444",
+      "title": "Order API latency caused by downstream timeout amplification",
+      "symptom": "Order API p99 latency rose sharply and request queues grew while a downstream pricing service was degraded.",
+      "root_cause": "Long downstream timeouts and synchronized retries amplified pricing-service latency across order workers.",
+      "resolution": "Reduce the downstream timeout, add jittered retry limits and enable the pricing circuit breaker.",
+      "tags": ["order", "downstream", "timeout", "circuit-breaker"]
+    },
+    {
+      "key": "auth-certificate-expiry",
+      "case_id": "55555555-5555-4555-8555-555555555555",
+      "title": "Authentication failures after TLS certificate expiry",
+      "symptom": "Authentication requests failed with TLS handshake errors immediately after the service certificate expired.",
+      "root_cause": "The certificate renewal job used an obsolete secret path and did not update the active gateway certificate.",
+      "resolution": "Renew and rotate the certificate, correct the secret path and alert before the next expiry window.",
+      "tags": ["authentication", "tls", "certificate", "handshake"]
+    },
+    {
+      "key": "notification-worker-backlog",
+      "case_id": "66666666-6666-4666-8666-666666666666",
+      "title": "Notification delay caused by worker queue backlog",
+      "symptom": "Email and push notifications arrived more than twenty minutes late while the pending queue grew continuously.",
+      "root_cause": "A slow template rendering call reduced worker throughput below the incoming notification rate.",
+      "resolution": "Cache compiled templates, add workers temporarily and alert on queue age as well as queue depth.",
+      "tags": ["notification", "queue-backlog", "worker", "latency"]
+    }
+  ],
+  "queries": [
+    {
+      "id": "cal-checkout-cpu-direct",
+      "split": "calibration",
+      "query": "checkout service CPU 超过 90%，发布后 SQL 查询变慢，应该检查什么？",
+      "relevant_case_ids": ["11111111-1111-4111-8111-111111111111"],
+      "expected_answer_points": ["Compare query plans", "Restore the index-friendly query"],
+      "tags": ["checkout", "direct", "chinese"],
+      "difficulty": "easy",
+      "should_abstain": false
+    },
+    {
+      "id": "cal-checkout-cpu-synonym",
+      "split": "calibration",
+      "query": "收银接口算力打满，同时数据库请求路径出现全表扫描",
+      "relevant_case_ids": ["11111111-1111-4111-8111-111111111111"],
+      "expected_answer_points": ["Sequential scans caused database-bound saturation"],
+      "tags": ["checkout", "synonym", "chinese"],
+      "difficulty": "medium",
+      "should_abstain": false
+    },
+    {
+      "id": "cal-payment-memory-direct",
+      "split": "calibration",
+      "query": "Payment workers keep growing in memory and are killed by OOM after the latest release.",
+      "relevant_case_ids": ["22222222-2222-4222-8222-222222222222"],
+      "expected_answer_points": ["Inspect retained payment payloads", "Deploy a bounded cache"],
+      "tags": ["payment", "direct", "english"],
+      "difficulty": "easy",
+      "should_abstain": false
+    },
+    {
+      "id": "cal-payment-memory-noisy",
+      "split": "calibration",
+      "query": "支付任务偶尔重启，heap 曲线只升不降；网络和数据库指标都正常",
+      "relevant_case_ids": ["22222222-2222-4222-8222-222222222222"],
+      "expected_answer_points": ["Profile the heap", "Check the unbounded in-process cache"],
+      "tags": ["payment", "noisy", "chinese"],
+      "difficulty": "medium",
+      "should_abstain": false
+    },
+    {
+      "id": "cal-inventory-redis-direct",
+      "split": "calibration",
+      "query": "inventory requests are waiting for Redis connections and the pool is at its limit",
+      "relevant_case_ids": ["33333333-3333-4333-8333-333333333333"],
+      "expected_answer_points": ["Find the missing Redis client cleanup path"],
+      "tags": ["inventory", "direct", "english"],
+      "difficulty": "easy",
+      "should_abstain": false
+    },
+    {
+      "id": "cal-inventory-redis-synonym",
+      "split": "calibration",
+      "query": "库存服务缓存连接借出去后没有归还，最终所有请求超时",
+      "relevant_case_ids": ["33333333-3333-4333-8333-333333333333"],
+      "expected_answer_points": ["Close Redis clients on every request path"],
+      "tags": ["inventory", "synonym", "chinese"],
+      "difficulty": "medium",
+      "should_abstain": false
+    },
+    {
+      "id": "cal-order-timeout-direct",
+      "split": "calibration",
+      "query": "Order API p99 increased because pricing is slow and every worker retries together.",
+      "relevant_case_ids": ["44444444-4444-4444-8444-444444444444"],
+      "expected_answer_points": ["Reduce downstream timeout", "Use jittered retry limits", "Enable the circuit breaker"],
+      "tags": ["order", "direct", "english"],
+      "difficulty": "easy",
+      "should_abstain": false
+    },
+    {
+      "id": "cal-auth-tls-direct",
+      "split": "calibration",
+      "query": "认证网关在证书到期后出现 TLS handshake error，如何处置？",
+      "relevant_case_ids": ["55555555-5555-4555-8555-555555555555"],
+      "expected_answer_points": ["Renew and rotate the certificate", "Correct the renewal secret path"],
+      "tags": ["authentication", "direct", "chinese"],
+      "difficulty": "easy",
+      "should_abstain": false
+    },
+    {
+      "id": "cal-notification-backlog-direct",
+      "split": "calibration",
+      "query": "Notifications are twenty minutes late and queue age keeps increasing because rendering is slow.",
+      "relevant_case_ids": ["66666666-6666-4666-8666-666666666666"],
+      "expected_answer_points": ["Cache compiled templates", "Monitor queue age"],
+      "tags": ["notification", "direct", "english"],
+      "difficulty": "easy",
+      "should_abstain": false
+    },
+    {
+      "id": "cal-cross-service-release",
+      "split": "calibration",
+      "query": "一次发布后 checkout CPU 和 order p99 同时恶化，前者有慢 SQL，后者在等待 pricing",
+      "relevant_case_ids": [
+        "11111111-1111-4111-8111-111111111111",
+        "44444444-4444-4444-8444-444444444444"
+      ],
+      "expected_answer_points": ["Compare checkout query plans", "Limit order downstream timeout amplification"],
+      "tags": ["cross-service", "release", "chinese"],
+      "difficulty": "hard",
+      "should_abstain": false
+    },
+    {
+      "id": "cal-abstain-raid-controller",
+      "split": "calibration",
+      "query": "物理服务器 RAID 控制器电池失效，应该更换哪个型号？",
+      "relevant_case_ids": [],
+      "expected_answer_points": [],
+      "tags": ["abstention", "hardware", "chinese"],
+      "difficulty": "medium",
+      "should_abstain": true
+    },
+    {
+      "id": "cal-abstain-domain-transfer",
+      "split": "calibration",
+      "query": "How do I transfer the company domain to another registrar?",
+      "relevant_case_ids": [],
+      "expected_answer_points": [],
+      "tags": ["abstention", "domain", "english"],
+      "difficulty": "medium",
+      "should_abstain": true
+    },
+    {
+      "id": "test-checkout-vague",
+      "split": "test",
+      "query": "结算服务发布之后又慢又耗 CPU，调用链最终都卡在数据层",
+      "relevant_case_ids": ["11111111-1111-4111-8111-111111111111"],
+      "expected_answer_points": ["Inspect the database query regression"],
+      "tags": ["checkout", "vague", "chinese"],
+      "difficulty": "hard",
+      "should_abstain": false
+    },
+    {
+      "id": "test-payment-heap",
+      "split": "test",
+      "query": "A heap profile shows completed transaction payloads retained indefinitely in payment processes.",
+      "relevant_case_ids": ["22222222-2222-4222-8222-222222222222"],
+      "expected_answer_points": ["Remove the unbounded payload cache"],
+      "tags": ["payment", "heap", "english"],
+      "difficulty": "medium",
+      "should_abstain": false
+    },
+    {
+      "id": "test-inventory-cache-pool",
+      "split": "test",
+      "query": "缓存本身可用，但 inventory 应用获取连接的等待时间持续升高",
+      "relevant_case_ids": ["33333333-3333-4333-8333-333333333333"],
+      "expected_answer_points": ["Investigate connection pool leakage"],
+      "tags": ["inventory", "indirect", "chinese"],
+      "difficulty": "hard",
+      "should_abstain": false
+    },
+    {
+      "id": "test-order-pricing-p99",
+      "split": "test",
+      "query": "pricing degradation is amplified into long order queues by identical retry timing",
+      "relevant_case_ids": ["44444444-4444-4444-8444-444444444444"],
+      "expected_answer_points": ["Add jitter", "Enable the pricing circuit breaker"],
+      "tags": ["order", "indirect", "english"],
+      "difficulty": "medium",
+      "should_abstain": false
+    },
+    {
+      "id": "test-auth-x509",
+      "split": "test",
+      "query": "X.509 renewal completed on the old secret location and login traffic now fails during negotiation.",
+      "relevant_case_ids": ["55555555-5555-4555-8555-555555555555"],
+      "expected_answer_points": ["Rotate the active gateway certificate", "Fix the secret path"],
+      "tags": ["authentication", "indirect", "english"],
+      "difficulty": "hard",
+      "should_abstain": false
+    },
+    {
+      "id": "test-notification-throughput",
+      "split": "test",
+      "query": "通知流量没变，但模板渲染变慢后消费速度低于生产速度，消息越积越多",
+      "relevant_case_ids": ["66666666-6666-4666-8666-666666666666"],
+      "expected_answer_points": ["Cache templates", "Scale workers temporarily"],
+      "tags": ["notification", "indirect", "chinese"],
+      "difficulty": "medium",
+      "should_abstain": false
+    },
+    {
+      "id": "test-abstain-image-pull",
+      "split": "test",
+      "query": "Kubernetes pod cannot pull a private registry image because imagePullSecret is missing.",
+      "relevant_case_ids": [],
+      "expected_answer_points": [],
+      "tags": ["abstention", "kubernetes", "english"],
+      "difficulty": "medium",
+      "should_abstain": true
+    },
+    {
+      "id": "test-abstain-ntp-drift",
+      "split": "test",
+      "query": "机房 NTP 偏移超过五分钟，应该选择哪个上游时间源？",
+      "relevant_case_ids": [],
+      "expected_answer_points": [],
+      "tags": ["abstention", "time-sync", "chinese"],
+      "difficulty": "medium",
+      "should_abstain": true
+    }
+  ]
+}
