@@ -18,6 +18,8 @@ node_modules/
 dist/
 coverage/
 *.tsbuildinfo
+playwright-report/
+test-results/
 
 # Editors and OS
 .idea/

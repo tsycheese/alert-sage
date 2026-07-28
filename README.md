@@ -6,14 +6,14 @@ Alert Sage 是一个面向运维场景的 AI 告警诊断助手，以“告警�
 
 ## 当前状态
 
-`V2.7A 确定性演示环境`：核心告警闭环、事务性 Outbox、DeepSeek/Dify 适配、结构化可观测性和 RAG 评测报告均已完成。版本化演示入口会强制使用 Mock 供应商、注入当前 Git revision、稳定复现日志工具降级并停在 Web 人工确认节点；重复执行不会创建第二条告警或工作流。
+`V2.7B 自动化主路径验收`：核心告警闭环、事务性 Outbox、DeepSeek/Dify 适配、结构化可观测性和 RAG 评测报告均已完成。版本化演示入口会强制使用 Mock 供应商并稳定复现日志工具降级；Playwright 在独立 Compose 项目和临时数据卷中自动验证创建、诊断、人工确认、刷新恢复、案例同步和幂等重放。
 
 ## 技术栈
 
 - 后端：Python 3.12、FastAPI、LangGraph、Celery、SQLAlchemy、Alembic、uv
 - 前端：React、TypeScript、Vite、Ant Design、TanStack Query
 - 数据：PostgreSQL、Redis
-- 交付：Docker Compose、pytest、Vitest、Prometheus、Grafana
+- 交付：Docker Compose、pytest、Vitest、Playwright、Prometheus、Grafana
 - 外部知识：Dify Knowledge Base API（可替换）
 - 诊断模型：DeepSeek OpenAI-compatible API（可替换）
 - 后续：RAG 固定评测集、pgvector 对照实现、认证与 RBAC
@@ -57,6 +57,23 @@ docker compose down
 ```
 
 演示入口不会读取或调用 `.env` 中的 Dify/DeepSeek 密钥，也不会删除已有数据。完整边界和验收方式见 [确定性演示环境](docs/07-demo-environment.md)。
+
+## 端到端验收
+
+首次准备根目录测试依赖和 Chromium：
+
+```powershell
+npm ci
+npm run e2e:install
+```
+
+运行隔离的完整浏览器验收：
+
+```powershell
+.\scripts\run-e2e.ps1
+```
+
+脚本使用独立的 `alert-sage-e2e` Compose project、专用端口和临时 PostgreSQL/Redis Volume，结束后自动清理，不会读写日常开发数据库。完整边界、覆盖范围和故障取证方式见 [端到端测试](docs/08-e2e-testing.md)。
 
 ## 本地开发
 
@@ -113,3 +130,4 @@ docker-compose.demo.yml
 - [本地开发与验证](docs/05-development.md)
 - [RAG 评测设计](docs/06-rag-evaluation.md)
 - [确定性演示环境](docs/07-demo-environment.md)
+- [端到端测试](docs/08-e2e-testing.md)

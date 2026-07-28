@@ -1,0 +1,12 @@
+{
+  "name": "alert-sage-e2e",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "e2e": "playwright test --config tests/e2e/playwright.config.ts",
+    "e2e:install": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.60.0"
+  }
+}

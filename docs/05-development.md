@@ -597,3 +597,13 @@ uv run pytest -q tests/test_demo_bootstrap.py
 首次自动批准验收暴露了 Outbox 消费前短暂保持 `waiting_for_approval` 的合法竞态；初始化器原先将其误判为异常。修复后该状态在批准等待阶段视为暂态，并增加回归测试。浏览器确认页面展示严重告警、Mock 结构化报告、日志工具降级、已同步案例和完整时间线，无控制台错误或页面级横向溢出。演示容器实际配置为 Mock/Mock，Dify 与模型密钥值均为空，Worker 故障工具为 `logs`，构建 revision 为 `4f1c6e6cc839-dirty`。
 
 V2.7A 质量门为后端 107 项测试、前端 14 项测试、Ruff、Ruff 格式检查、Python 编译、Alembic `0005 (head)` 差异检查、TypeScript 类型检查、生产构建、Compose 合并检查、PowerShell 语法检查、重复执行和真实浏览器验收全部通过。
+
+## 18. V2.7B 自动化主路径验收
+
+V2.7B 在仓库根目录引入锁定版本的 Playwright 测试入口，并通过 `scripts/run-e2e.ps1` 编排独立的 `alert-sage-e2e` Compose project。测试环境使用专用端口和临时 PostgreSQL/Redis Volume，API 与 Worker 强制使用 Mock 供应商和既有 `logs` 工具故障注入；它不会调用 Dify/DeepSeek，也不会接触日常开发数据库。
+
+浏览器场景通过 Web 完成告警创建、异步诊断、结构化报告与工具降级检查，在人工确认态主动刷新页面验证持久化恢复，然后批准建议并等待案例同步。最后再次提交完全相同的告警，验证响应头 `x-idempotent-replay=true`、HTTP 200 和原详情地址，证明没有创建第二条业务事实。
+
+运行器仅允许清理由精确 project name 标识的 E2E 环境，默认在成功和失败后删除容器、网络及临时 Volume。Playwright 失败时保留 trace、截图、视频和页面上下文，Compose 日志同步写入 `test-results/compose.log`。操作方式和安全边界见 `docs/08-e2e-testing.md`。
+
+2026-07-28 使用两套依次创建并销毁的空数据卷完成真实浏览器验收：首次构建运行的 Playwright 场景耗时 8.1 秒，复用镜像的第二次场景耗时 7.7 秒，两次均通过并完成环境清理。V2.7B 质量门为后端 107 项测试、前端 14 项测试、Ruff、Ruff 格式检查、Python 编译、TypeScript 类型检查、生产构建、Playwright 用例发现、PowerShell 语法检查、补丁格式检查和两轮隔离 E2E 全部通过。
