@@ -2,6 +2,8 @@
 param(
     [switch]$SkipBuild,
     [switch]$KeepEnvironment,
+    [ValidateSet("e2e", "showcase:capture")]
+    [string]$Task = "e2e",
     [ValidateRange(30, 600)]
     [int]$StartupTimeoutSeconds = 180
 )
@@ -114,10 +116,10 @@ try {
         throw "The isolated E2E API did not become ready within $StartupTimeoutSeconds seconds."
     }
 
-    & npm run e2e
+    & npm run $Task
     if ($LASTEXITCODE -ne 0) {
         Save-ComposeLogs
-        throw "Playwright E2E tests failed."
+        throw "Playwright task '$Task' failed."
     }
 }
 catch {

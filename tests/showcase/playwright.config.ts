@@ -7,17 +7,22 @@ export default defineConfig({
   testMatch: "*.spec.ts",
   fullyParallel: false,
   workers: 1,
-  forbidOnly: Boolean(process.env.CI),
-  retries: process.env.CI ? 1 : 0,
+  forbidOnly: true,
+  retries: 0,
   timeout: 150_000,
   expect: {
     timeout: 20_000,
   },
-  outputDir: "../../test-results/playwright",
-  reporter: [
-    ["line"],
-    ["html", { outputFolder: "../../playwright-report", open: "never" }],
-  ],
+  outputDir: "../../test-results/showcase",
+  reporter: [["line"]],
   use: sharedUse,
-  projects: [chromiumProject],
+  projects: [
+    {
+      ...chromiumProject,
+      use: {
+        ...chromiumProject.use,
+        viewport: { width: 980, height: 900 },
+      },
+    },
+  ],
 });

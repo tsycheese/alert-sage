@@ -6,7 +6,21 @@ Alert Sage 是一个面向运维场景的 AI 告警诊断助手，以“告警�
 
 ## 当前状态
 
-`V2.7B 自动化主路径验收`：核心告警闭环、事务性 Outbox、DeepSeek/Dify 适配、结构化可观测性和 RAG 评测报告均已完成。版本化演示入口会强制使用 Mock 供应商并稳定复现日志工具降级；Playwright 在独立 Compose 项目和临时数据卷中自动验证创建、诊断、人工确认、刷新恢复、案例同步和幂等重放。
+`V2.7C 求职展示资产包`：核心告警闭环、事务性 Outbox、DeepSeek/Dify 适配、结构化可观测性和 RAG 评测报告均已完成。版本化离线演示可以稳定复现工具部分失败、人工确认和案例沉淀，Playwright 在独立 Compose 环境中验证主路径并自动生成脱敏展示截图。
+
+## 一分钟了解
+
+这个项目重点展示的不是“让大模型回答一个告警”，而是如何把不可靠的模型和外部工具放进可恢复、可审计、有人类控制点的工程流程：
+
+- LangGraph 在 PostgreSQL checkpoint 上暂停并恢复七节点诊断流程。
+- 事务性 Outbox 保证业务事实与 Celery 投递意图一起提交。
+- 单个工具超时不会伪造证据，其他上下文仍可生成结构化报告。
+- 人工批准后生成结构化案例，并通过可替换适配器异步同步知识库。
+- Dify、DeepSeek、日志、指标和 CMDB 均隔离在供应商适配器之外。
+
+![等待人工确认的结构化诊断报告](docs/assets/showcase/01-human-review.png)
+
+完整架构图、五分钟讲解顺序和面试追问见 [求职展示指南](docs/09-portfolio-showcase.md)。图中内容来自版本化 Mock 演示，不代表真实 Dify 或 DeepSeek 调用结果。
 
 ## 技术栈
 
@@ -16,7 +30,7 @@ Alert Sage 是一个面向运维场景的 AI 告警诊断助手，以“告警�
 - 交付：Docker Compose、pytest、Vitest、Playwright、Prometheus、Grafana
 - 外部知识：Dify Knowledge Base API（可替换）
 - 诊断模型：DeepSeek OpenAI-compatible API（可替换）
-- 后续：RAG 固定评测集、pgvector 对照实现、认证与 RBAC
+- 可选扩展：pgvector 对照实现、真实运维数据源、认证与 RBAC
 
 ## Docker 一键启动
 
@@ -57,6 +71,14 @@ docker compose down
 ```
 
 演示入口不会读取或调用 `.env` 中的 Dify/DeepSeek 密钥，也不会删除已有数据。完整边界和验收方式见 [确定性演示环境](docs/07-demo-environment.md)。
+
+生成版本化展示截图：
+
+```powershell
+.\scripts\capture-showcase.ps1
+```
+
+该命令使用 V2.7B 的隔离环境自动覆盖 `docs/assets/showcase/` 中的三张主路径截图，不访问日常开发数据库或云端供应商。
 
 ## 端到端验收
 
@@ -131,3 +153,4 @@ docker-compose.demo.yml
 - [RAG 评测设计](docs/06-rag-evaluation.md)
 - [确定性演示环境](docs/07-demo-environment.md)
 - [端到端测试](docs/08-e2e-testing.md)
+- [求职展示指南](docs/09-portfolio-showcase.md)

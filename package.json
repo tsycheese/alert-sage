@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "scripts": {
     "e2e": "playwright test --config tests/e2e/playwright.config.ts",
-    "e2e:install": "playwright install chromium"
+    "e2e:install": "playwright install chromium",
+    "showcase:capture": "playwright test --config tests/showcase/playwright.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.60.0"

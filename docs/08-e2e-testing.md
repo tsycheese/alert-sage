@@ -73,3 +73,13 @@ npx playwright show-trace <trace.zip 的路径>
 ```
 
 无论成功或失败，默认都会清理隔离容器、网络和临时数据卷；取证文件不随 Compose 环境删除。
+
+## 5. 展示截图采集
+
+V2.7C 复用同一隔离运行器和表单交互助手，但将展示采集与回归断言分成两个 Playwright 配置，避免正常 E2E 每次改写版本化图片：
+
+```powershell
+.\scripts\capture-showcase.ps1
+```
+
+使用 `-SkipBuild` 可以复用当前镜像。脚本仍会创建全新临时数据卷，并在完成后清理环境；输出只写入 `docs/assets/showcase/`。采集场景在截图瞬间取消粘性导航并隐藏消息浮层，聚焦诊断卡片，不修改生产 CSS 或业务数据。图片内容来自 Mock 模型和 Mock 知识适配器，不能作为真实云端模型效果证明。
