@@ -6,7 +6,7 @@ Alert Sage 是一个面向运维场景的 AI 告警诊断助手，以“告警�
 
 ## 当前状态
 
-`V2.5 可靠任务投递闭环`：工作流启动、人工恢复、失败重试和案例同步都会把业务事实与 Outbox 投递意图原子写入 PostgreSQL；Celery Beat Relay 分批发布到 Redis，Broker 短暂不可用时自动退避并在恢复后续跑。全链路继续支持 DeepSeek、Dify、结构化关联日志、诊断时间线和十一面板 Grafana Dashboard，Mock 模式可离线开发。
+`V2.7A 确定性演示环境`：核心告警闭环、事务性 Outbox、DeepSeek/Dify 适配、结构化可观测性和 RAG 评测报告均已完成。版本化演示入口会强制使用 Mock 供应商、注入当前 Git revision、稳定复现日志工具降级并停在 Web 人工确认节点；重复执行不会创建第二条告警或工作流。
 
 ## 技术栈
 
@@ -41,6 +41,22 @@ docker compose up --build
 ```powershell
 docker compose down
 ```
+
+## 确定性演示
+
+在 Windows PowerShell 中运行：
+
+```powershell
+.\scripts\start-demo.ps1
+```
+
+命令会启动离线演示覆盖环境、创建固定 CPU 告警、运行诊断并停在人工确认节点。使用 `-Approve` 可自动批准并等待案例同步完成：
+
+```powershell
+.\scripts\start-demo.ps1 -Approve
+```
+
+演示入口不会读取或调用 `.env` 中的 Dify/DeepSeek 密钥，也不会删除已有数据。完整边界和验收方式见 [确定性演示环境](docs/07-demo-environment.md)。
 
 ## 本地开发
 
@@ -83,7 +99,9 @@ backend/          FastAPI、SQLAlchemy、Alembic 和后端测试
 frontend/         React/Vite Web 应用和前端测试
 docs/             项目范围、架构、数据模型和路线图
 infra/            Prometheus 抓取与 Grafana provisioning/Dashboard
+scripts/          本地演示和工程编排入口
 docker-compose.yml
+docker-compose.demo.yml
 ```
 
 ## 文档
@@ -93,3 +111,5 @@ docker-compose.yml
 - [核心数据模型](docs/03-data-model.md)
 - [开发路线图](docs/04-roadmap.md)
 - [本地开发与验证](docs/05-development.md)
+- [RAG 评测设计](docs/06-rag-evaluation.md)
+- [确定性演示环境](docs/07-demo-environment.md)

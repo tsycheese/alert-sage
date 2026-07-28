@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     metrics_enabled: bool = True
     worker_metrics_port: int = Field(default=9101, ge=1, le=65_535)
     workflow_tool_timeout_seconds: float = Field(default=10.0, gt=0)
+    demo_tool_failure_provider: Literal["none", "metrics", "logs", "cmdb", "knowledge"] = "none"
     case_sync_timeout_seconds: float = Field(default=180.0, gt=0)
     knowledge_retrieval_timeout_seconds: float = Field(default=15.0, gt=0)
     rag_evaluation_set_path: str = "evaluation_sets/rag-v2.6-baseline.json"
@@ -68,6 +69,15 @@ class Settings(BaseSettings):
             )
         self.dify_base_url = self.dify_base_url.rstrip("/")
         self.diagnostic_model_base_url = self.diagnostic_model_base_url.rstrip("/")
+        if self.demo_tool_failure_provider != "none" and (
+            self.environment != "development"
+            or self.knowledge_provider != "mock"
+            or self.diagnostic_model_provider != "mock"
+        ):
+            raise ValueError(
+                "ALERT_SAGE_DEMO_TOOL_FAILURE_PROVIDER is only allowed in development "
+                "with mock knowledge and diagnostic providers"
+            )
         if self.diagnostic_model_provider == "deepseek":
             api_key = (
                 self.diagnostic_model_api_key.get_secret_value().strip()

@@ -322,7 +322,7 @@ WHERE table_schema = 'public'
 ORDER BY table_name;
 ```
 
-当前预期迁移版本为 `0004`，并能看到 `alerts`、`workflow_runs`、`workflow_events`、`tool_executions`、`diagnosis_reports`、`human_decisions`、`cases` 和 `outbox_messages`。
+当前预期迁移版本为 `0005`，并能看到 `alerts`、`workflow_runs`、`workflow_events`、`tool_executions`、`diagnosis_reports`、`human_decisions`、`cases`、`outbox_messages`、`rag_evaluation_runs` 和 `rag_evaluation_results`。
 
 ## 9. V1.3B 专项验证
 
@@ -556,3 +556,44 @@ ORDER BY available_at, created_at;
 2026-07-26 已完成 Redis 故障恢复验收：停止 Redis 后创建的运行 `609d60ae-90b7-4a0f-8b17-2e64b055aa3f` 保持 `queued`，对应 `workflow.start` 消息持久化为 `pending`；恢复 Redis 后约一个轮询周期自动进入人工确认，批准后工作流完成，案例 `6e491471-4fe3-53b5-8e77-b85d5c16d26d` 自动同步。验收使用临时 Mock 供应商隔离 DeepSeek/Dify 网络波动，完成后恢复 `.env` 中的真实供应商配置。过程中发现下游案例消息继承上游 `outbox_message_id` 时发生关联字段重复绑定；修复为由当前消息 ID 覆盖父级上下文，并加入回归测试，积压案例随后自动恢复，证明消息未丢失。
 
 V2.5 质量门为后端 75 项测试、前端 9 项测试、Ruff、Ruff 格式检查、Python 编译、Alembic `0004` 差异检查、TypeScript 类型检查、生产构建、Compose 配置检查和运行态 Redis 故障恢复全部通过。
+
+## 17. V2.7A 确定性演示环境
+
+推荐通过根目录 PowerShell 入口启动求职演示：
+
+```powershell
+.\scripts\start-demo.ps1
+```
+
+脚本读取当前 Git 短 SHA 并临时注入 `ALERT_SAGE_BUILD_REVISION`；工作区存在未提交修改时追加 `-dirty`，避免把不可复现构建伪装成正式提交。随后组合 `docker-compose.yml` 与 `docker-compose.demo.yml` 启动 API、Worker、Relay 和 Web。演示覆盖文件强制 API/Worker 使用 Mock 知识与诊断适配器、清空容器内云端 API Key，并仅在 Worker 中配置日志工具超时；因此不会调用 Dify Cloud 或 DeepSeek，也不会让外部告警 payload 控制故障注入。
+
+初始化器通过公开 API 完成以下操作，不直接写业务表：
+
+1. 等待 API readiness。
+2. 创建版本化固定 CPU 告警。
+3. 使用稳定幂等键启动工作流。
+4. 等待 `waiting_for_approval`，并验证时间线存在 `logs` 工具失败。
+5. 输出告警详情 URL、运行 ID 和当前状态。
+
+重复执行返回已有告警和工作流，不会覆盖已有内容。自动批准和案例同步验收使用：
+
+```powershell
+.\scripts\start-demo.ps1 -Approve
+```
+
+已有镜像无需重建时可增加 `-SkipBuild`。脚本不会重置数据库或删除 Volume；若固定场景已经完成，重复执行只验证现有完成状态和案例同步结果。场景内容发生不兼容变化时必须提升场景版本和外部告警 ID，不能复用旧幂等键覆盖历史事实。
+
+专项测试覆盖首次初始化、完成态重复执行、自动批准、缺失预期故障、仅替换选定工具，以及故障配置只能在 `development + mock` 边界启用：
+
+```powershell
+Set-Location backend
+uv run pytest -q tests/test_demo_bootstrap.py
+```
+
+完整设计与操作边界见 `docs/07-demo-environment.md`。
+
+2026-07-26 已完成真实运行态验收：首次执行创建告警 `be795b8a-fc12-42bb-a0ba-95d9b8c7fa35` 和工作流 `2f7dfc91-9646-4639-aa43-8323675c6c78`，稳定停在人工确认，并在 19 条最终持久化事件中记录 `logs` 工具失败。第二次准备返回相同 ID、`replayed=true` 和 `dispatched=false`；批准后从 checkpoint 恢复为 `completed`，案例 `7ef1531c-95dd-595d-9d57-e7bd2492a991` 一次同步为 `synced`。完成态再执行两次仍返回相同告警、运行和案例，没有新增投递意图。
+
+首次自动批准验收暴露了 Outbox 消费前短暂保持 `waiting_for_approval` 的合法竞态；初始化器原先将其误判为异常。修复后该状态在批准等待阶段视为暂态，并增加回归测试。浏览器确认页面展示严重告警、Mock 结构化报告、日志工具降级、已同步案例和完整时间线，无控制台错误或页面级横向溢出。演示容器实际配置为 Mock/Mock，Dify 与模型密钥值均为空，Worker 故障工具为 `logs`，构建 revision 为 `4f1c6e6cc839-dirty`。
+
+V2.7A 质量门为后端 107 项测试、前端 14 项测试、Ruff、Ruff 格式检查、Python 编译、Alembic `0005 (head)` 差异检查、TypeScript 类型检查、生产构建、Compose 合并检查、PowerShell 语法检查、重复执行和真实浏览器验收全部通过。

@@ -62,7 +62,8 @@ async def _run_locked(
                     session_factory=session_factory,
                     database_url=settings.database_url,
                     context_providers=default_context_providers(
-                        knowledge_retriever=create_knowledge_retriever(settings)
+                        knowledge_retriever=create_knowledge_retriever(settings),
+                        failure_provider=settings.demo_tool_failure_provider,
                     ),
                     diagnostic_model=create_diagnostic_model(settings),
                     tool_timeout_seconds=settings.workflow_tool_timeout_seconds,

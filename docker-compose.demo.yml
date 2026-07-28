@@ -1,0 +1,21 @@
+services:
+  api:
+    environment:
+      ALERT_SAGE_ENVIRONMENT: development
+      ALERT_SAGE_KNOWLEDGE_PROVIDER: mock
+      ALERT_SAGE_DIFY_API_KEY: ""
+      ALERT_SAGE_DIAGNOSTIC_MODEL_PROVIDER: mock
+      ALERT_SAGE_DIAGNOSTIC_MODEL_API_KEY: ""
+
+  worker:
+    environment:
+      ALERT_SAGE_ENVIRONMENT: development
+      ALERT_SAGE_KNOWLEDGE_PROVIDER: mock
+      ALERT_SAGE_DIFY_API_KEY: ""
+      ALERT_SAGE_DIAGNOSTIC_MODEL_PROVIDER: mock
+      ALERT_SAGE_DIAGNOSTIC_MODEL_API_KEY: ""
+      ALERT_SAGE_DEMO_TOOL_FAILURE_PROVIDER: logs
+
+  relay:
+    environment:
+      ALERT_SAGE_OUTBOX_POLL_INTERVAL_SECONDS: 1

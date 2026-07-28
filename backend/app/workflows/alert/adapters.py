@@ -107,6 +107,18 @@ class MockKnowledgeProvider:
         )
 
 
+class ConfiguredFailureContextProvider:
+    """Development-only wrapper used by the deterministic demo environment."""
+
+    def __init__(self, provider: ContextProvider) -> None:
+        self.provider = provider
+        self.name = provider.name
+
+    async def collect(self, alert: Mapping[str, JsonValue]) -> ContextProviderResult:
+        del alert
+        raise TimeoutError(f"configured demo timeout for {self.name}")
+
+
 class KnowledgeContextProvider:
     name = "knowledge"
 
@@ -148,17 +160,24 @@ class KnowledgeContextProvider:
 def default_context_providers(
     *,
     knowledge_retriever: KnowledgeRetriever | None = None,
+    failure_provider: str = "none",
 ) -> tuple[ContextProvider, ...]:
     knowledge_provider: ContextProvider = (
         KnowledgeContextProvider(knowledge_retriever)
         if knowledge_retriever is not None
         else MockKnowledgeProvider()
     )
-    return (
+    providers: tuple[ContextProvider, ...] = (
         MockMetricsProvider(),
         MockLogsProvider(),
         MockCmdbProvider(),
         knowledge_provider,
+    )
+    return tuple(
+        ConfiguredFailureContextProvider(provider)
+        if provider.name == failure_provider
+        else provider
+        for provider in providers
     )
 
 
