@@ -21,7 +21,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.models.enums import HumanDecisionAction
+from app.models.enums import HumanActorSource, HumanDecisionAction
 
 if TYPE_CHECKING:
     from app.models.case import Case
@@ -70,6 +70,11 @@ class HumanDecision(Base):
             "action <> 'reanalyze' OR (comment IS NOT NULL AND btrim(comment) <> '')",
             name="reanalyze_comment_required",
         ),
+        CheckConstraint(
+            "comment IS NULL OR char_length(comment) <= 1000",
+            name="comment_max_length",
+        ),
+        CheckConstraint("actor_source IN ('web', 'feishu')", name="actor_source_values"),
         Index("ix_human_decisions_created_at", "created_at"),
     )
 
@@ -81,6 +86,11 @@ class HumanDecision(Base):
     action: Mapped[HumanDecisionAction] = mapped_column(String(24))
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     actor: Mapped[str] = mapped_column(String(128))
+    actor_source: Mapped[HumanActorSource] = mapped_column(
+        String(16), default=HumanActorSource.WEB, server_default=HumanActorSource.WEB.value
+    )
+    actor_subject: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    actor_display_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     diagnosis_report: Mapped[DiagnosisReport] = relationship(back_populates="human_decision")

@@ -5,6 +5,8 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import Settings, get_settings
+from app.integrations.feishu.coordination import schedule_initial_card
 from app.models.alert import Alert
 from app.models.enums import AlertSeverity, AlertStatus
 from app.repositories.alerts import AlertRepository
@@ -42,9 +44,10 @@ class AlertPage:
 
 
 class AlertService:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, *, settings: Settings | None = None) -> None:
         self.session = session
         self.repository = AlertRepository(session)
+        self.settings = settings or get_settings()
 
     async def create(self, command: AlertCreate) -> CreateAlertResult:
         payload = self._build_payload(command)
@@ -69,6 +72,7 @@ class AlertService:
 
         try:
             await self.repository.add(alert)
+            await schedule_initial_card(self.session, alert=alert, settings=self.settings)
             await self.session.commit()
         except IntegrityError:
             await self.session.rollback()

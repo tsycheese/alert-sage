@@ -20,11 +20,12 @@ V2.7A 为求职展示提供一套可重复、可审计且默认离线的核心�
 演示使用 `docker-compose.demo.yml` 覆盖运行配置：
 
 - API 与 Worker 强制选择 Mock 知识和诊断适配器。
+- API、Worker 与 Relay 显式使用 `ALERT_SAGE_RUNTIME_PROFILE=demo`，不存在真实模式向 Mock 的隐式降级。
 - 容器内 Dify/DeepSeek API Key 被显式清空。
 - 只有 Worker 启用 `logs` 工具故障注入。
 - Relay 轮询周期缩短到一秒，减少现场等待时间。
 
-故障注入配置默认是 `none`，并由 Settings 拒绝在 production、Dify 或 DeepSeek 模式启用。故障来源是部署配置，不接受告警 payload 控制。
+故障注入配置默认是 `none`，并由 Settings 拒绝在 `real/test` 或任何真实供应商模式启用。故障来源是部署配置，不接受告警 payload 控制。
 
 ## 3. 场景契约
 

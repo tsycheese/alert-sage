@@ -105,12 +105,28 @@ V1.3B 已完成可恢复七节点 LangGraph。V1.3C 已完成异步工作流与 
 - [x] 添加架构图、运行截图和五分钟演示脚本。
 - 记录关键技术决策及性能数据。
 
+### 4.5 真实运行 Profile 与飞书可靠渠道
+
+状态：配置、迁移、适配器、回调 API、共享事务核心、Outbox 投递、staging Compose 和自动化契约已实现；2026-08-11 已使用合成、非敏感数据完成真实 DeepSeek + Dify 与专用飞书测试群 live 验收。固定 Linux VM 与正式域名部署已评估并延期，不计入本阶段完成条件。
+
+- [x] 无默认 `real/demo/test` Profile，真实模式拒绝 Mock 或混合供应商。
+- [x] API、Worker、Relay 按组件角色校验并接收最小密钥集合。
+- [x] 新告警按严重级别和来源白名单生成飞书共享卡片投递意图。
+- [x] 签名、AES、时间窗、Schema、event ID 与正文哈希防重放。
+- [x] 飞书启动/重试与 Web 共用行锁和活动运行唯一约束。
+- [x] 白名单人工决策、二次确认、重新分析反馈和三次上限。
+- [x] 版本化卡片、私有提醒、token 缓存、有限重试和失败可见性。
+- [x] Linux VM staging Compose、固定 Caddy 和仓库外密钥运行手册。
+- [x] 使用专用测试群完成飞书 live 验收并保存脱敏记录。
+- [x] 使用合成、非敏感 Dataset 完成最新一轮 DeepSeek + Dify live smoke。
+- [ ] 固定 Linux VM、正式域名、备份和进程自恢复等长期运行能力；待产品与运维边界完善后实施。
+
 ## 5. V3：可选扩展
 
 - 接入真实 Prometheus HTTP API。
 - 接入 Loki/Elasticsearch 日志搜索适配器。
 - 接入真实 CMDB。
-- 飞书机器人及告警卡片。
+- 多群/多租户飞书路由与通讯录/RBAC 集成。
 - 基于 fingerprint 和时间窗口的告警聚合。
 - 只读自动化工具及细粒度审批策略。
 - 用户认证与 RBAC。

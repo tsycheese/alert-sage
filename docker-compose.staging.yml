@@ -1,0 +1,54 @@
+services:
+  postgres:
+    ports: !reset []
+
+  redis:
+    ports: !reset []
+
+  api:
+    environment:
+      ALERT_SAGE_ENVIRONMENT: production
+      ALERT_SAGE_DEBUG: "false"
+    ports: !reset []
+
+  worker:
+    environment:
+      ALERT_SAGE_ENVIRONMENT: production
+    ports: !reset []
+
+  relay:
+    environment:
+      ALERT_SAGE_ENVIRONMENT: production
+
+  web:
+    ports: !reset []
+
+  prometheus:
+    ports: !reset []
+
+  grafana:
+    ports: !override
+      - "127.0.0.1:${GRAFANA_PORT:-13000}:3000"
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    environment:
+      ALERT_SAGE_PUBLIC_DOMAIN: ${ALERT_SAGE_PUBLIC_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_started
+      web:
+        condition: service_started
+
+volumes:
+  caddy_data:
+  caddy_config:

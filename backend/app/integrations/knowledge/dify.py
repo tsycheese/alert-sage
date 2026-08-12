@@ -32,6 +32,10 @@ class DifyIndexingError(KnowledgeProviderError):
     pass
 
 
+class DifyVectorDimensionMismatchError(DifyIndexingError):
+    pass
+
+
 @dataclass(frozen=True, slots=True)
 class DifyKnowledgeConfig:
     base_url: str
@@ -227,10 +231,26 @@ class DifyKnowledgeAdapter(CasePublisher, KnowledgeRetriever):
             if document.indexing_status == "completed":
                 return document.id
             if document.indexing_status in self._terminal_failures:
+                if self._is_vector_dimension_mismatch(document.error):
+                    raise DifyVectorDimensionMismatchError(
+                        "Dify vector index dimension does not match the configured embedding model"
+                    )
                 raise DifyIndexingError(
                     f"Dify document indexing ended with status {document.indexing_status}"
                 )
             await asyncio.sleep(self.config.poll_interval_seconds)
+
+    @staticmethod
+    def _is_vector_dimension_mismatch(error: str | None) -> bool:
+        if not error:
+            return False
+        normalized = error.casefold()
+        mentions_dimension = "dimension" in normalized or "diamension" in normalized
+        return (
+            "vector" in normalized
+            and mentions_dimension
+            and ("fit" in normalized or "mismatch" in normalized)
+        )
 
     async def _request_json(
         self,

@@ -69,6 +69,37 @@ class HumanDecisionAction(StrEnum):
     REANALYZE = "reanalyze"
 
 
+class HumanActorSource(StrEnum):
+    WEB = "web"
+    FEISHU = "feishu"
+
+
+class FeishuCallbackStatus(StrEnum):
+    RECEIVED = "received"
+    PROCESSED = "processed"
+    REJECTED = "rejected"
+    FAILED = "failed"
+
+
+class FeishuCardStatus(StrEnum):
+    PENDING = "pending"
+    ACTIVE = "active"
+    FAILED = "failed"
+    REPLACED = "replaced"
+
+
+class FeishuDeliveryKind(StrEnum):
+    CARD_SYNC = "card_sync"
+    PRIVATE_REMINDER = "private_reminder"
+
+
+class FeishuDeliveryStatus(StrEnum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
 class OutboxStatus(StrEnum):
     PENDING = "pending"
     PUBLISHED = "published"
@@ -80,6 +111,8 @@ class OutboxTopic(StrEnum):
     WORKFLOW_RETRY = "workflow.retry"
     CASE_SYNC = "case.sync"
     RAG_EVALUATION_RUN = "rag.evaluation.run"
+    FEISHU_CARD_SYNC = "feishu.card.sync"
+    FEISHU_REMINDER_SEND = "feishu.reminder.send"
 
 
 class RagEvaluationRunStatus(StrEnum):

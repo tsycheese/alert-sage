@@ -337,10 +337,23 @@ async def test_deepseek_retries_rate_limit_and_hides_authentication_body() -> No
 
 def test_deepseek_settings_and_factory_keep_secrets_out_of_repr() -> None:
     with pytest.raises(ValidationError, match="DIAGNOSTIC_MODEL_API_KEY"):
-        Settings(_env_file=None, diagnostic_model_provider="deepseek")
+        Settings(
+            _env_file=None,
+            runtime_profile="real",
+            component_role="worker",
+            knowledge_provider="dify",
+            dify_api_key="dify-test-secret",
+            dify_dataset_id="8dc8a66d-8202-4099-b0ee-6d42e0bf57d1",
+            diagnostic_model_provider="deepseek",
+        )
 
     settings = Settings(
         _env_file=None,
+        runtime_profile="real",
+        component_role="worker",
+        knowledge_provider="dify",
+        dify_api_key="dify-test-secret",
+        dify_dataset_id="8dc8a66d-8202-4099-b0ee-6d42e0bf57d1",
         diagnostic_model_provider="deepseek",
         diagnostic_model_api_key="deepseek-live-secret",
         diagnostic_model_name="deepseek-v4-flash",
@@ -349,6 +362,7 @@ def test_deepseek_settings_and_factory_keep_secrets_out_of_repr() -> None:
 
     assert isinstance(model, OpenAICompatibleDiagnosticModel)
     assert "deepseek-live-secret" not in repr(settings)
+    assert "dify-test-secret" not in repr(settings)
     assert isinstance(
         create_diagnostic_model(Settings(_env_file=None)),
         MockDiagnosticModel,

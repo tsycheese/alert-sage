@@ -24,6 +24,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    if settings.component_role not in {"api", "test"}:
+        raise RuntimeError("FastAPI must run with ALERT_SAGE_COMPONENT_ROLE=api")
     configure_logging(
         service="alert-sage-api",
         environment=settings.environment,

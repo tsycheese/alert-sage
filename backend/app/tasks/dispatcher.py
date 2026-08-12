@@ -79,6 +79,26 @@ class CeleryOutboxPublisher:
                     headers=headers,
                 )
                 aggregate_context = {"rag_evaluation_run_id": str(payload.rag_evaluation_run_id)}
+            elif topic in {
+                OutboxTopic.FEISHU_CARD_SYNC,
+                OutboxTopic.FEISHU_REMINDER_SEND,
+            }:
+                from app.integrations.feishu.schemas import (
+                    FeishuCardSyncMessage,
+                    FeishuReminderSendMessage,
+                )
+                from app.tasks.feishu import deliver_feishu_message
+
+                if topic is OutboxTopic.FEISHU_CARD_SYNC:
+                    feishu_payload = FeishuCardSyncMessage.model_validate(message.payload)
+                else:
+                    feishu_payload = FeishuReminderSendMessage.model_validate(message.payload)
+                deliver_feishu_message.apply_async(
+                    args=[str(feishu_payload.delivery_id)],
+                    task_id=task_id,
+                    headers=headers,
+                )
+                aggregate_context = {"feishu_delivery_id": str(feishu_payload.delivery_id)}
             else:  # pragma: no cover - exhaustive guard for future enum members
                 raise ValueError(f"unsupported outbox topic: {topic}")
 

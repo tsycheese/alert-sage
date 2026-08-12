@@ -274,6 +274,8 @@ async def test_configured_demo_failure_only_replaces_selected_provider() -> None
 def test_demo_failure_configuration_is_restricted_to_offline_development() -> None:
     allowed = Settings(
         _env_file=None,
+        runtime_profile="demo",
+        component_role="test",
         environment="development",
         knowledge_provider="mock",
         diagnostic_model_provider="mock",
@@ -281,10 +283,11 @@ def test_demo_failure_configuration_is_restricted_to_offline_development() -> No
     )
     assert allowed.demo_tool_failure_provider == "logs"
 
-    with pytest.raises(ValidationError, match="only allowed in development"):
+    with pytest.raises(ValidationError, match="only allowed in the demo profile"):
         Settings(
             _env_file=None,
-            environment="production",
+            runtime_profile="test",
+            component_role="test",
             knowledge_provider="mock",
             diagnostic_model_provider="mock",
             demo_tool_failure_provider="logs",

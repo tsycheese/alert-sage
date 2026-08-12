@@ -1,4 +1,5 @@
 import asyncio
+import os
 import selectors
 import sys
 import uuid
@@ -10,6 +11,28 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.schema import CreateSchema, DropSchema
+
+if os.getenv("ALERT_SAGE_RUN_VENDOR_LIVE_TESTS") == "1":
+    os.environ["ALERT_SAGE_COMPONENT_ROLE"] = "test"
+    os.environ["ALERT_SAGE_FEISHU_ENABLED"] = "false"
+else:
+    os.environ.update(
+        {
+            "ALERT_SAGE_RUNTIME_PROFILE": "test",
+            "ALERT_SAGE_COMPONENT_ROLE": "test",
+            "ALERT_SAGE_KNOWLEDGE_PROVIDER": "mock",
+            "ALERT_SAGE_DIAGNOSTIC_MODEL_PROVIDER": "mock",
+            "ALERT_SAGE_FEISHU_ENABLED": "false",
+        }
+    )
+    for secret_name in (
+        "ALERT_SAGE_DIFY_API_KEY",
+        "ALERT_SAGE_DIAGNOSTIC_MODEL_API_KEY",
+        "ALERT_SAGE_FEISHU_APP_SECRET",
+        "ALERT_SAGE_FEISHU_VERIFICATION_TOKEN",
+        "ALERT_SAGE_FEISHU_ENCRYPT_KEY",
+    ):
+        os.environ.pop(secret_name, None)
 
 import app.models  # noqa: F401 - register all ORM models before create_all
 from app.core.config import get_settings

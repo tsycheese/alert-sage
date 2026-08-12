@@ -27,6 +27,9 @@ erDiagram
     WORKFLOW_RUNS ||--o{ DIAGNOSIS_REPORTS : produces
     DIAGNOSIS_REPORTS ||--o| HUMAN_DECISIONS : receives
     DIAGNOSIS_REPORTS ||--o| CASES : becomes
+    ALERTS ||--o| FEISHU_CARD_BINDINGS : displays
+    FEISHU_CARD_BINDINGS ||--o{ FEISHU_CALLBACK_EVENTS : audits
+    FEISHU_CARD_BINDINGS ||--o{ FEISHU_DELIVERIES : delivers
 
     ALERTS {
         uuid id PK
@@ -110,6 +113,9 @@ erDiagram
         varchar action
         text comment
         varchar actor
+        varchar actor_source
+        varchar actor_subject
+        varchar actor_display_name
         timestamptz created_at
     }
 
@@ -253,7 +259,7 @@ reanalyze
 
 决策写入与运行状态变更应处于同一数据库事务中。接口需要防止对已结束运行重复审批。
 
-每份报告最多接受一个决策，`idempotency_key` 全局唯一；`reanalyze` 必须提供非空反馈。数据库约束负责最终一致性，Pydantic Schema 负责在进入事务前返回可理解的校验错误。
+每份报告最多接受一个决策，`idempotency_key` 全局唯一；`reanalyze` 必须提供非空且不超过 1,000 字符的反馈。`actor_source` 区分 `web/feishu`，飞书身份保存 app-scoped `open_id` 和配置标签快照；旧数据回填为 Web 来源。Web 请求体中的 `actor` 仍是不可信演示字段。数据库约束负责最终一致性，Pydantic Schema 负责在进入事务前返回可理解的校验错误。
 
 ### 3.7 `cases`
 
@@ -274,7 +280,7 @@ failed
 
 ### 3.8 `outbox_messages`
 
-Outbox 保存已经随业务事务提交、但尚未确认发布到 Celery Broker 的内部消息。允许的 `topic` 只有 `workflow.start`、`workflow.resume`、`workflow.retry`、`case.sync` 和 `rag.evaluation.run`；`payload` 在发布前必须通过对应的严格 Pydantic Schema。
+Outbox 保存已经随业务事务提交、但尚未确认发布到 Celery Broker 的内部消息。允许的 `topic` 只有 `workflow.start`、`workflow.resume`、`workflow.retry`、`case.sync`、`rag.evaluation.run`、`feishu.card.sync` 和 `feishu.reminder.send`；`payload` 在发布前必须通过对应的严格 Pydantic Schema。
 
 核心字段：
 
@@ -303,6 +309,14 @@ queued -> running -> completed
 `rag_evaluation_results` 每个问题一行，以 `UNIQUE(run_id, query_id)` 防止重复结果，保存问题、标准相关案例、归一化检索条目、逐题命中指标、拒答判断、延迟和脱敏错误码。检索条目只保存文档/片段标识、案例 UUID、排名、分数和来源，不保存 Cloud 返回的片段正文。
 
 两张表分离的目的是支持按问题、难度和失败类型查询及后续 Web 对比，避免把全部逐题结果塞入一个不可维护的 JSONB 大对象。详细决策见 ADR 0011。
+
+### 3.10 飞书渠道表
+
+`feishu_card_bindings` 保证一条告警至多一个共享卡片绑定，保存目标 chat、当前 message、期望/已投递 revision、当前 nonce 哈希、渠道状态和脱敏错误码。共享卡片不是业务事实，只是 PostgreSQL 告警状态的版本化投影。
+
+`feishu_callback_events` 以 `UNIQUE(app_id, event_id)` 防重放，保存 app-scoped open_id、标准化动作、消息/群绑定、原始密文请求 SHA-256、处理结果和脱敏错误。不保存解密后的完整正文；同一 event ID 携带不同正文会被拒绝。
+
+`feishu_deliveries` 保存共享卡片和私有提醒的幂等投递，每行包含 binding、kind、recipient、revision、动作 nonce、尝试次数、状态、结果 message ID 和脱敏错误码。私有提醒首次发送的 `decision_id` 为空；决策被接收后创建的新 delivery 复制原 message ID，并用可空外键 `decision_id` 固定引用对应 HumanDecision，从而在异步乱序下仍能把正确的私聊提醒更新为已处理。旧 revision 即使被至少一次重复消费，也只标记自身完成，不得覆盖 binding 的新 revision；私聊更新失败只影响自身 delivery，不得把共享 binding 标记为失败。
 
 ## 4. LangGraph 状态
 

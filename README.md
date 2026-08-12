@@ -8,6 +8,8 @@ Alert Sage 是一个面向运维场景的 AI 告警诊断助手，以“告警�
 
 `V2.7C 求职展示资产包`：核心告警闭环、事务性 Outbox、DeepSeek/Dify 适配、结构化可观测性和 RAG 评测报告均已完成。版本化离线演示可以稳定复现工具部分失败、人工确认和案例沉淀，Playwright 在独立 Compose 环境中验证主路径并自动生成脱敏展示截图。
 
+当前开发分支进一步加入无默认值的 `real/demo/test` 运行 Profile 与飞书可靠交互渠道。真实模式强制 DeepSeek + Dify，不会静默回退 Mock；企业自建飞书应用可接收版本化告警卡片，并复用后端状态机完成手动启动、批准、驳回、重新分析和失败重试。2026-08-11 已使用合成、非敏感 CPU 告警完成真实 DeepSeek + Dify 以及专用飞书测试群的 live 验收；固定域名与 Linux VM 部署按产品决策延期，不属于本阶段已上线能力。
+
 ## 一分钟了解
 
 这个项目重点展示的不是“让大模型回答一个告警”，而是如何把不可靠的模型和外部工具放进可恢复、可审计、有人类控制点的工程流程：
@@ -36,6 +38,8 @@ Alert Sage 是一个面向运维场景的 AI 告警诊断助手，以“告警�
 
 ```powershell
 Copy-Item .env.example .env
+# 编辑 .env，显式选择 real 并填写仓库外注入的 DeepSeek/Dify 配置；
+# 离线演示请直接使用下方 start-demo.ps1。
 docker compose up --build
 ```
 
@@ -154,3 +158,5 @@ docker-compose.demo.yml
 - [确定性演示环境](docs/07-demo-environment.md)
 - [端到端测试](docs/08-e2e-testing.md)
 - [求职展示指南](docs/09-portfolio-showcase.md)
+- [真实运行 Profile、飞书配置与 staging 部署](docs/10-runtime-profiles-and-feishu.md)
+- [真实运行与飞书阶段验收记录](docs/11-real-profile-feishu-acceptance.md)

@@ -5,7 +5,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
-from app.models.enums import HumanDecisionAction, WorkflowEventType, WorkflowRunStatus
+from app.models.enums import (
+    HumanActorSource,
+    HumanDecisionAction,
+    WorkflowEventType,
+    WorkflowRunStatus,
+)
 
 NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 StableKey = Annotated[
@@ -106,7 +111,7 @@ class HumanDecisionCommand(BaseModel):
 
     idempotency_key: StableKey
     action: HumanDecisionAction
-    comment: str | None = None
+    comment: str | None = Field(default=None, max_length=1000)
 
     @model_validator(mode="after")
     def require_reanalysis_feedback(self) -> "HumanDecisionCommand":
@@ -122,6 +127,9 @@ class WorkflowResumePayload(HumanDecisionCommand):
         str,
         StringConstraints(strip_whitespace=True, min_length=1, max_length=128),
     ]
+    actor_source: HumanActorSource = HumanActorSource.WEB
+    actor_subject: str | None = Field(default=None, min_length=1, max_length=128)
+    actor_display_name: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class WorkflowStartCommand(BaseModel):
@@ -181,6 +189,9 @@ class HumanDecisionResponse(BaseModel):
     action: HumanDecisionAction
     comment: str | None
     actor: str
+    actor_source: HumanActorSource
+    actor_subject: str | None
+    actor_display_name: str | None
     created_at: datetime
 
 

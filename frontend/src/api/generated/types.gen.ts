@@ -313,6 +313,76 @@ export type DiagnosisReportResponse = {
 };
 
 /**
+ * FeishuCardStatus
+ */
+export type FeishuCardStatus = 'pending' | 'active' | 'failed' | 'replaced';
+
+/**
+ * FeishuChannelStatusResponse
+ */
+export type FeishuChannelStatusResponse = {
+    /**
+     * Alert Id
+     */
+    alert_id: string;
+    /**
+     * Binding Id
+     */
+    binding_id?: string | null;
+    /**
+     * Delivered Revision
+     */
+    delivered_revision?: number | null;
+    /**
+     * Desired Revision
+     */
+    desired_revision?: number | null;
+    /**
+     * Eligibility Reason
+     */
+    eligibility_reason: string;
+    /**
+     * Eligible
+     */
+    eligible: boolean;
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+    /**
+     * Last Error Code
+     */
+    last_error_code?: string | null;
+    /**
+     * Retry Available
+     */
+    retry_available?: boolean;
+    shared_card_status?: FeishuCardStatus | null;
+};
+
+/**
+ * FeishuRetryResponse
+ */
+export type FeishuRetryResponse = {
+    /**
+     * Alert Id
+     */
+    alert_id: string;
+    /**
+     * Delivery Id
+     */
+    delivery_id: string | null;
+    /**
+     * Dispatched
+     */
+    dispatched: boolean;
+    /**
+     * Revision
+     */
+    revision: number | null;
+};
+
+/**
  * HTTPValidationError
  */
 export type HttpValidationError = {
@@ -339,6 +409,11 @@ export type HealthResponse = {
      */
     version: string;
 };
+
+/**
+ * HumanActorSource
+ */
+export type HumanActorSource = 'web' | 'feishu';
 
 /**
  * HumanDecisionAction
@@ -373,6 +448,15 @@ export type HumanDecisionResponse = {
      * Actor
      */
     actor: string;
+    /**
+     * Actor Display Name
+     */
+    actor_display_name: string | null;
+    actor_source: HumanActorSource;
+    /**
+     * Actor Subject
+     */
+    actor_subject: string | null;
     /**
      * Comment
      */
@@ -1190,6 +1274,66 @@ export type ListWorkflowEventsApiV1AlertsAlertIdEventsGetResponses = {
 
 export type ListWorkflowEventsApiV1AlertsAlertIdEventsGetResponse = ListWorkflowEventsApiV1AlertsAlertIdEventsGetResponses[keyof ListWorkflowEventsApiV1AlertsAlertIdEventsGetResponses];
 
+export type GetFeishuStatusApiV1AlertsAlertIdFeishuGetData = {
+    body?: never;
+    path: {
+        /**
+         * Alert Id
+         */
+        alert_id: string;
+    };
+    query?: never;
+    url: '/api/v1/alerts/{alert_id}/feishu';
+};
+
+export type GetFeishuStatusApiV1AlertsAlertIdFeishuGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetFeishuStatusApiV1AlertsAlertIdFeishuGetError = GetFeishuStatusApiV1AlertsAlertIdFeishuGetErrors[keyof GetFeishuStatusApiV1AlertsAlertIdFeishuGetErrors];
+
+export type GetFeishuStatusApiV1AlertsAlertIdFeishuGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: FeishuChannelStatusResponse;
+};
+
+export type GetFeishuStatusApiV1AlertsAlertIdFeishuGetResponse = GetFeishuStatusApiV1AlertsAlertIdFeishuGetResponses[keyof GetFeishuStatusApiV1AlertsAlertIdFeishuGetResponses];
+
+export type RetryFeishuDeliveryApiV1AlertsAlertIdFeishuRetryPostData = {
+    body?: never;
+    path: {
+        /**
+         * Alert Id
+         */
+        alert_id: string;
+    };
+    query?: never;
+    url: '/api/v1/alerts/{alert_id}/feishu/retry';
+};
+
+export type RetryFeishuDeliveryApiV1AlertsAlertIdFeishuRetryPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RetryFeishuDeliveryApiV1AlertsAlertIdFeishuRetryPostError = RetryFeishuDeliveryApiV1AlertsAlertIdFeishuRetryPostErrors[keyof RetryFeishuDeliveryApiV1AlertsAlertIdFeishuRetryPostErrors];
+
+export type RetryFeishuDeliveryApiV1AlertsAlertIdFeishuRetryPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: FeishuRetryResponse;
+};
+
+export type RetryFeishuDeliveryApiV1AlertsAlertIdFeishuRetryPostResponse = RetryFeishuDeliveryApiV1AlertsAlertIdFeishuRetryPostResponses[keyof RetryFeishuDeliveryApiV1AlertsAlertIdFeishuRetryPostResponses];
+
 export type RetryWorkflowApiV1AlertsAlertIdRetryPostData = {
     body?: never;
     path: {
@@ -1377,6 +1521,43 @@ export type ReadinessApiV1HealthReadyGetResponses = {
 };
 
 export type ReadinessApiV1HealthReadyGetResponse = ReadinessApiV1HealthReadyGetResponses[keyof ReadinessApiV1HealthReadyGetResponses];
+
+export type FeishuCardActionsApiV1IntegrationsFeishuCardActionsPostData = {
+    body?: never;
+    headers?: {
+        /**
+         * X-Lark-Request-Timestamp
+         */
+        'X-Lark-Request-Timestamp'?: string | null;
+        /**
+         * X-Lark-Request-Nonce
+         */
+        'X-Lark-Request-Nonce'?: string | null;
+        /**
+         * X-Lark-Signature
+         */
+        'X-Lark-Signature'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/integrations/feishu/card-actions';
+};
+
+export type FeishuCardActionsApiV1IntegrationsFeishuCardActionsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type FeishuCardActionsApiV1IntegrationsFeishuCardActionsPostError = FeishuCardActionsApiV1IntegrationsFeishuCardActionsPostErrors[keyof FeishuCardActionsApiV1IntegrationsFeishuCardActionsPostErrors];
+
+export type FeishuCardActionsApiV1IntegrationsFeishuCardActionsPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
 
 export type SearchKnowledgeApiV1KnowledgeSearchPostData = {
     body: KnowledgeSearchRequest;

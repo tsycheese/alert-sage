@@ -6,6 +6,8 @@ from app.observability.logging import configure_logging
 from app.observability.worker import configure_worker_metrics
 
 settings = get_settings()
+if settings.component_role not in {"worker", "relay", "test"}:
+    raise RuntimeError("Celery must run with ALERT_SAGE_COMPONENT_ROLE=worker or relay")
 
 celery_app = Celery(
     "alert_sage",
@@ -15,6 +17,7 @@ celery_app = Celery(
         "app.tasks.cases",
         "app.tasks.outbox",
         "app.tasks.evaluations",
+        "app.tasks.feishu",
     ],
 )
 celery_app.conf.update(

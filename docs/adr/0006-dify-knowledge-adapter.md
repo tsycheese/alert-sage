@@ -21,9 +21,9 @@ V1.4 已在 PostgreSQL 中保存结构化案例，并通过独立 Celery 任务�
 - API Key 由 `SecretStr` 环境配置注入，只在后端工厂中解包。
 - 案例以 `alert-sage-case-{case_id}.md` 作为稳定名称；任务重放时先精确查询，完成索引的文档直接复用，失败文档更新后重新索引。
 - 创建或更新后轮询文档状态；外层任务超时负责限制总等待时间。
-- 网络错误、限流和服务端错误做有限重试；鉴权、异常响应和索引失败转换为脱敏领域异常。
+- 网络错误、限流和服务端错误做有限重试；鉴权、异常响应和索引失败转换为脱敏领域异常。已知的向量维度不匹配单独映射为稳定错误类型，但不保存供应商响应正文、Trace ID 或凭据。
 - 检索结果转换为统一 `DocumentChunk`，来源使用 `dify://datasets/{dataset}/documents/{document}/segments/{segment}`。
-- Mock 是默认 provider，保证离线开发与测试不依赖云端。
+- Mock 仅由显式 `demo`/`test` Profile 使用，保证离线开发与测试不依赖云端；`real` Profile 必须显式使用 Dify，不允许静默回退。
 
 ## 影响
 

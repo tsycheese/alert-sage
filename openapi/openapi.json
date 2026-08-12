@@ -500,6 +500,149 @@
         "title": "DiagnosisReportResponse",
         "type": "object"
       },
+      "FeishuCardStatus": {
+        "enum": [
+          "pending",
+          "active",
+          "failed",
+          "replaced"
+        ],
+        "title": "FeishuCardStatus",
+        "type": "string"
+      },
+      "FeishuChannelStatusResponse": {
+        "properties": {
+          "alert_id": {
+            "format": "uuid",
+            "title": "Alert Id",
+            "type": "string"
+          },
+          "binding_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binding Id"
+          },
+          "delivered_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivered Revision"
+          },
+          "desired_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Desired Revision"
+          },
+          "eligibility_reason": {
+            "title": "Eligibility Reason",
+            "type": "string"
+          },
+          "eligible": {
+            "title": "Eligible",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "last_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Code"
+          },
+          "retry_available": {
+            "default": false,
+            "title": "Retry Available",
+            "type": "boolean"
+          },
+          "shared_card_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeishuCardStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "alert_id",
+          "enabled",
+          "eligible",
+          "eligibility_reason"
+        ],
+        "title": "FeishuChannelStatusResponse",
+        "type": "object"
+      },
+      "FeishuRetryResponse": {
+        "properties": {
+          "alert_id": {
+            "format": "uuid",
+            "title": "Alert Id",
+            "type": "string"
+          },
+          "delivery_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery Id"
+          },
+          "dispatched": {
+            "title": "Dispatched",
+            "type": "boolean"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision"
+          }
+        },
+        "required": [
+          "alert_id",
+          "delivery_id",
+          "revision",
+          "dispatched"
+        ],
+        "title": "FeishuRetryResponse",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -537,6 +680,14 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "HumanActorSource": {
+        "enum": [
+          "web",
+          "feishu"
+        ],
+        "title": "HumanActorSource",
+        "type": "string"
+      },
       "HumanDecisionAction": {
         "enum": [
           "approve",
@@ -562,6 +713,7 @@
           "comment": {
             "anyOf": [
               {
+                "maxLength": 1000,
                 "type": "string"
               },
               {
@@ -592,6 +744,31 @@
           "actor": {
             "title": "Actor",
             "type": "string"
+          },
+          "actor_display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Display Name"
+          },
+          "actor_source": {
+            "$ref": "#/components/schemas/HumanActorSource"
+          },
+          "actor_subject": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Subject"
           },
           "comment": {
             "anyOf": [
@@ -631,6 +808,9 @@
           "action",
           "comment",
           "actor",
+          "actor_source",
+          "actor_subject",
+          "actor_display_name",
           "created_at"
         ],
         "title": "HumanDecisionResponse",
@@ -2090,6 +2270,92 @@
         ]
       }
     },
+    "/api/v1/alerts/{alert_id}/feishu": {
+      "get": {
+        "operationId": "get_feishu_status_api_v1_alerts__alert_id__feishu_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alert_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Alert Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeishuChannelStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Feishu Status",
+        "tags": [
+          "feishu"
+        ]
+      }
+    },
+    "/api/v1/alerts/{alert_id}/feishu/retry": {
+      "post": {
+        "operationId": "retry_feishu_delivery_api_v1_alerts__alert_id__feishu_retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alert_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Alert Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeishuRetryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Feishu Delivery",
+        "tags": [
+          "feishu"
+        ]
+      }
+    },
     "/api/v1/alerts/{alert_id}/retry": {
       "post": {
         "operationId": "retry_workflow_api_v1_alerts__alert_id__retry_post",
@@ -2403,6 +2669,85 @@
         "summary": "Readiness",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/api/v1/integrations/feishu/card-actions": {
+      "post": {
+        "operationId": "feishu_card_actions_api_v1_integrations_feishu_card_actions_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Lark-Request-Timestamp",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Lark-Request-Timestamp"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Lark-Request-Nonce",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Lark-Request-Nonce"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Lark-Signature",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Lark-Signature"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Feishu Card Actions",
+        "tags": [
+          "integrations"
         ]
       }
     },

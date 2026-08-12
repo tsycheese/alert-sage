@@ -18,9 +18,22 @@ Copy-Item .env.example .env
 
 `.env` 不得提交。变量使用 `ALERT_SAGE_` 前缀映射后端配置；容器内数据库地址由 Compose 注入，仓库示例在宿主机使用 PostgreSQL `15432`、Redis `16379`、API `18000`、Web `15173`、Worker 指标 `19101`、Prometheus `19090` 和 Grafana `13000`，避免与常用默认端口冲突。
 
+### 2.0 必填运行边界
+
+复制示例后必须先选择 Profile；空值会按设计导致启动失败：
+
+```dotenv
+ALERT_SAGE_RUNTIME_PROFILE=real
+ALERT_SAGE_COMPONENT_ROLE=api
+ALERT_SAGE_KNOWLEDGE_PROVIDER=dify
+ALERT_SAGE_DIAGNOSTIC_MODEL_PROVIDER=deepseek
+```
+
+直接运行 API 使用 `component_role=api`，Worker 使用 `worker`，Beat Relay 使用 `relay`。Compose 已分别注入角色。离线演示不要修改日常 `.env` 来伪装真实模式，使用 `docker-compose.demo.yml`；pytest 在应用首次导入前显式注入 `test + mock + mock`。完整配置、飞书应用和 staging 部署见 [真实运行 Profile 与飞书渠道](10-runtime-profiles-and-feishu.md)。
+
 ### 2.1 Dify Cloud
 
-离线开发保持 `ALERT_SAGE_KNOWLEDGE_PROVIDER=mock`。连接 Dify Cloud 时，在根目录 `.env` 中设置：
+连接 Dify Cloud 时，在根目录 `.env` 中设置：
 
 ```dotenv
 ALERT_SAGE_KNOWLEDGE_PROVIDER=dify
@@ -437,6 +450,8 @@ uv run pytest -q tests/test_dify_knowledge.py
 ```
 
 2026-07-19 已使用 Dify Cloud 完成真实验收：空数据集首次只读检索按预期返回脱敏 `503`；批准首条报告后，案例一次同步为 `synced` 并获得真实文档 UUID。使用唯一关键词检索命中 4 个片段，首条结果指向同一文档并保留 `dify://` 来源；第二条告警的诊断报告生成 1 条 Dify 知识证据，之后以拒绝结束且未创建额外案例。对已同步案例调用重试接口返回 `dispatched=false`。浏览器实测页面无错误覆盖层和控制台错误，长文档内容不会造成横向溢出。
+
+若 Dify 文档终态为 `error` 且脱敏错误码为 `DifyVectorDimensionMismatchError`，说明知识库底层向量集合与当前 Embedding 模型输出维度不一致。不要循环重试同一配置；优先新建固定 Embedding 模型的知识库、用合成文档验证写入与召回，再切换 `ALERT_SAGE_DIFY_DATASET_ID`。旧知识库先保留用于回滚，确认新库验收通过后再按数据治理流程处理。
 
 ## 13. V2.2 DeepSeek 专项验证
 

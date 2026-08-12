@@ -27,7 +27,7 @@ class OutboxMessage(Base):
         UniqueConstraint("idempotency_key", name="outbox_messages_idempotency_key"),
         CheckConstraint(
             "topic IN ('workflow.start', 'workflow.resume', 'workflow.retry', 'case.sync', "
-            "'rag.evaluation.run')",
+            "'rag.evaluation.run', 'feishu.card.sync', 'feishu.reminder.send')",
             name="topic_values",
         ),
         CheckConstraint(

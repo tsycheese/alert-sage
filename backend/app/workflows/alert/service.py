@@ -11,12 +11,17 @@ from langgraph.types import Command
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.config import Settings, get_settings
+from app.integrations.feishu.coordination import (
+    schedule_approval_reminders,
+    schedule_card_sync,
+)
 from app.models.alert import Alert
 from app.models.case import Case
 from app.models.diagnosis import DiagnosisReport, HumanDecision
 from app.models.enums import (
     AlertStatus,
-    HumanDecisionAction,
+    HumanActorSource,
     OutboxTopic,
     ToolExecutionStatus,
     WorkflowEventType,
@@ -30,6 +35,12 @@ from app.schemas.workflow import (
     WorkflowResumePayload,
 )
 from app.services.outbox import enqueue_outbox_message
+from app.services.workflow_commands import (
+    WorkflowCommandIdempotencyConflictError,
+    WorkflowCommandNotFoundError,
+    WorkflowCommandService,
+    WorkflowCommandStateConflictError,
+)
 from app.services.workflow_events import append_workflow_event
 from app.workflows.alert.state import AlertWorkflowState
 from app.workflows.alert.transitions import (
@@ -78,9 +89,16 @@ class PreparedWorkflowRun:
 
 
 class AlertWorkflowService:
-    def __init__(self, *, session_factory: async_sessionmaker[AsyncSession], graph: Any) -> None:
+    def __init__(
+        self,
+        *,
+        session_factory: async_sessionmaker[AsyncSession],
+        graph: Any,
+        settings: Settings | None = None,
+    ) -> None:
         self.session_factory = session_factory
         self.graph = graph
+        self.settings = settings or get_settings()
 
     async def start(
         self,
@@ -165,12 +183,18 @@ class AlertWorkflowService:
         workflow_run_id: UUID,
         command: HumanDecisionCommand,
         actor: str,
+        actor_source: HumanActorSource = HumanActorSource.WEB,
+        actor_subject: str | None = None,
+        actor_display_name: str | None = None,
     ) -> WorkflowExecutionResult:
         resume = WorkflowResumePayload(
             idempotency_key=command.idempotency_key,
             action=command.action,
             comment=command.comment,
             actor=actor,
+            actor_source=actor_source,
+            actor_subject=actor_subject,
+            actor_display_name=actor_display_name,
         )
         should_resume, _decision_id, _delivery_created = await self._persist_human_decision(
             workflow_run_id,
@@ -190,12 +214,18 @@ class AlertWorkflowService:
         workflow_run_id: UUID,
         command: HumanDecisionCommand,
         actor: str,
+        actor_source: HumanActorSource = HumanActorSource.WEB,
+        actor_subject: str | None = None,
+        actor_display_name: str | None = None,
     ) -> UUID | None:
         resume = WorkflowResumePayload(
             idempotency_key=command.idempotency_key,
             action=command.action,
             comment=command.comment,
             actor=actor,
+            actor_source=actor_source,
+            actor_subject=actor_subject,
+            actor_display_name=actor_display_name,
         )
         should_resume, decision_id, delivery_created = await self._persist_human_decision(
             workflow_run_id,
@@ -228,6 +258,9 @@ class AlertWorkflowService:
                 action=decision.action,
                 comment=decision.comment,
                 actor=decision.actor,
+                actor_source=decision.actor_source,
+                actor_subject=decision.actor_subject,
+                actor_display_name=decision.actor_display_name,
             )
             thread_id = run.thread_id
         if already_terminal:
@@ -245,39 +278,12 @@ class AlertWorkflowService:
 
     async def prepare_retry(self, workflow_run_id: UUID, *, enqueue: bool = True) -> bool:
         async with self.session_factory() as session:
-            run = await self._locked_run(session, workflow_run_id)
-            if run.status == WorkflowRunStatus.QUEUED:
-                return False
-            if run.status != WorkflowRunStatus.FAILED:
-                raise WorkflowStateConflictError(f"workflow status {run.status} cannot be retried")
-            ensure_workflow_run_status_transition(run.status, WorkflowRunStatus.QUEUED)
-            run.status = WorkflowRunStatus.QUEUED
-            run.attempt += 1
-            run.error_code = None
-            run.error_message = None
-            run.finished_at = None
-            await self._append_event(
-                session,
-                run,
-                idempotency_key=f"workflow:queued:attempt-{run.attempt}",
-                event_type=WorkflowEventType.WORKFLOW_QUEUED,
-                status=WorkflowRunStatus.QUEUED,
-                payload={"workflow_version": run.workflow_version, "attempt": run.attempt},
-            )
-            delivery_created = True
-            if enqueue:
-                _, delivery_created = await enqueue_outbox_message(
-                    session,
-                    topic=OutboxTopic.WORKFLOW_RETRY,
-                    aggregate_id=run.id,
-                    idempotency_key=f"workflow:retry:{run.id}:attempt-{run.attempt}",
-                    payload={"workflow_run_id": str(run.id)},
-                    correlation={
-                        "alert_id": run.alert_id,
-                        "workflow_run_id": run.id,
-                        "thread_id": run.thread_id,
-                    },
-                )
+            try:
+                delivery_created = await WorkflowCommandService(
+                    session, settings=self.settings
+                ).prepare_retry(workflow_run_id, enqueue=enqueue)
+            except Exception as exc:
+                self._raise_command_error(exc)
             await session.commit()
             return delivery_created
 
@@ -329,60 +335,18 @@ class AlertWorkflowService:
         enqueue: bool,
     ) -> tuple[WorkflowRun, Alert, bool]:
         async with self.session_factory() as session:
-            existing = await session.scalar(
-                select(WorkflowRun).where(WorkflowRun.idempotency_key == idempotency_key)
-            )
-            if existing is not None:
-                if existing.alert_id != alert_id:
-                    raise WorkflowIdempotencyConflictError
-                alert = await session.get(Alert, alert_id)
-                if alert is None:
-                    raise WorkflowStateConflictError("workflow alert no longer exists")
-                return existing, alert, False
-
-            alert = await session.scalar(
-                select(Alert).where(Alert.id == alert_id).with_for_update()
-            )
-            if alert is None:
-                raise WorkflowRunNotFoundError
-            if alert.status not in {AlertStatus.RECEIVED, AlertStatus.FAILED}:
-                raise WorkflowStateConflictError(
-                    f"alert status {alert.status} cannot start a new workflow"
+            try:
+                prepared = await WorkflowCommandService(
+                    session, settings=self.settings
+                ).prepare_start(
+                    alert_id=alert_id,
+                    idempotency_key=idempotency_key,
+                    enqueue=enqueue,
                 )
-
-            run = WorkflowRun(
-                id=uuid.uuid4(),
-                alert_id=alert.id,
-                thread_id=str(uuid.uuid4()),
-                idempotency_key=idempotency_key,
-                workflow_version=WORKFLOW_VERSION,
-                status=WorkflowRunStatus.QUEUED,
-            )
-            session.add(run)
-            await session.flush()
-            await self._append_event(
-                session,
-                run,
-                idempotency_key="workflow:queued:attempt-1",
-                event_type=WorkflowEventType.WORKFLOW_QUEUED,
-                status=WorkflowRunStatus.QUEUED,
-                payload={"workflow_version": WORKFLOW_VERSION, "attempt": 1},
-            )
-            if enqueue:
-                await enqueue_outbox_message(
-                    session,
-                    topic=OutboxTopic.WORKFLOW_START,
-                    aggregate_id=run.id,
-                    idempotency_key=f"workflow:start:{run.id}",
-                    payload={"workflow_run_id": str(run.id)},
-                    correlation={
-                        "alert_id": alert.id,
-                        "workflow_run_id": run.id,
-                        "thread_id": run.thread_id,
-                    },
-                )
+            except Exception as exc:
+                self._raise_command_error(exc)
             await session.commit()
-            return run, alert, True
+            return prepared.run, prepared.alert, prepared.created
 
     async def _mark_started(self, workflow_run_id: UUID) -> None:
         now = datetime.now(UTC)
@@ -403,6 +367,12 @@ class AlertWorkflowService:
                 event_type=WorkflowEventType.WORKFLOW_STARTED,
                 status=WorkflowRunStatus.RUNNING,
                 payload={"attempt": run.attempt},
+            )
+            await schedule_card_sync(
+                session,
+                alert_id=alert.id,
+                reason=f"workflow-running-attempt-{run.attempt}",
+                settings=self.settings,
             )
             await session.commit()
 
@@ -599,6 +569,17 @@ class AlertWorkflowService:
                 status=WorkflowRunStatus.WAITING_FOR_APPROVAL,
                 payload={"report_version": latest_version or 0},
             )
+            await schedule_card_sync(
+                session,
+                alert_id=alert.id,
+                reason=f"workflow-waiting-report-{latest_version or 0}",
+                settings=self.settings,
+            )
+            await schedule_approval_reminders(
+                session,
+                alert_id=alert.id,
+                settings=self.settings,
+            )
             await session.commit()
 
     async def _persist_human_decision(
@@ -609,94 +590,22 @@ class AlertWorkflowService:
         enqueue: bool,
     ) -> tuple[bool, UUID | None, bool]:
         async with self.session_factory() as session:
-            run = await self._locked_run(session, workflow_run_id)
-            if run.status in {WorkflowRunStatus.COMPLETED, WorkflowRunStatus.REJECTED}:
-                existing = await session.scalar(
-                    select(HumanDecision).where(
-                        HumanDecision.idempotency_key == resume.idempotency_key
-                    )
+            try:
+                prepared = await WorkflowCommandService(
+                    session, settings=self.settings
+                ).prepare_decision(
+                    workflow_run_id=workflow_run_id,
+                    resume=resume,
+                    enqueue=enqueue,
                 )
-                if existing is None:
-                    raise WorkflowStateConflictError("workflow is already terminal")
-                self._ensure_same_decision(existing, resume)
-                return False, existing.id, False
-            if run.status != WorkflowRunStatus.WAITING_FOR_APPROVAL:
-                raise WorkflowStateConflictError(
-                    f"workflow status {run.status} does not accept human input"
-                )
-
-            report = await session.scalar(
-                select(DiagnosisReport)
-                .where(DiagnosisReport.workflow_run_id == run.id)
-                .order_by(DiagnosisReport.version.desc())
-                .limit(1)
-                .with_for_update()
-            )
-            if report is None:
-                raise WorkflowStateConflictError("workflow has no diagnosis report")
-            existing = await session.scalar(
-                select(HumanDecision).where(HumanDecision.idempotency_key == resume.idempotency_key)
-            )
-            if existing is not None:
-                self._ensure_same_decision(existing, resume)
-                if existing.diagnosis_report_id != report.id:
-                    return False, existing.id, False
-            else:
-                report_decision = await session.scalar(
-                    select(HumanDecision).where(HumanDecision.diagnosis_report_id == report.id)
-                )
-                if report_decision is not None:
-                    raise WorkflowStateConflictError(
-                        "diagnosis report already has a human decision"
-                    )
-                existing = HumanDecision(
-                    diagnosis_report_id=report.id,
-                    idempotency_key=resume.idempotency_key,
-                    action=resume.action,
-                    comment=resume.comment,
-                    actor=resume.actor,
-                )
-                session.add(existing)
-                await session.flush()
-
-            await self._append_event(
-                session,
-                run,
-                idempotency_key=f"human-decision:{resume.idempotency_key}",
-                event_type=WorkflowEventType.HUMAN_DECISION_RECEIVED,
-                node_name="human_review",
-                status=run.status,
-                payload={
-                    "action": resume.action.value,
-                    "report_version": report.version,
-                    "actor": resume.actor,
-                },
-            )
-            if resume.action is HumanDecisionAction.REANALYZE:
-                alert = await self._locked_alert(session, run.alert_id)
-                ensure_workflow_run_status_transition(run.status, WorkflowRunStatus.REANALYZING)
-                ensure_alert_status_transition(alert.status, AlertStatus.REANALYZING)
-                run.status = WorkflowRunStatus.REANALYZING
-                alert.status = AlertStatus.REANALYZING
-            delivery_created = False
-            if enqueue:
-                _, delivery_created = await enqueue_outbox_message(
-                    session,
-                    topic=OutboxTopic.WORKFLOW_RESUME,
-                    aggregate_id=run.id,
-                    idempotency_key=f"workflow:resume:{existing.id}",
-                    payload={
-                        "workflow_run_id": str(run.id),
-                        "decision_id": str(existing.id),
-                    },
-                    correlation={
-                        "alert_id": run.alert_id,
-                        "workflow_run_id": run.id,
-                        "thread_id": run.thread_id,
-                    },
-                )
+            except Exception as exc:
+                self._raise_command_error(exc)
             await session.commit()
-            return True, existing.id, delivery_created
+            return (
+                prepared.should_resume,
+                prepared.decision_id,
+                prepared.delivery_created,
+            )
 
     async def _persist_final_status(
         self,
@@ -730,6 +639,12 @@ class AlertWorkflowService:
             node_name="finalize",
             status=run_target,
             payload={"report_version": state.report_version},
+        )
+        await schedule_card_sync(
+            session,
+            alert_id=alert.id,
+            reason=f"workflow-{state.final_status}-report-{state.report_version}",
+            settings=self.settings,
         )
 
     async def _persist_case(
@@ -821,7 +736,23 @@ class AlertWorkflowService:
                 status=WorkflowRunStatus.FAILED,
                 payload={"error_code": run.error_code},
             )
+            await schedule_card_sync(
+                session,
+                alert_id=alert.id,
+                reason=f"workflow-failed-attempt-{run.attempt}",
+                settings=self.settings,
+            )
             await session.commit()
+
+    @staticmethod
+    def _raise_command_error(error: Exception) -> None:
+        if isinstance(error, WorkflowCommandNotFoundError):
+            raise WorkflowRunNotFoundError from error
+        if isinstance(error, WorkflowCommandStateConflictError):
+            raise WorkflowStateConflictError(str(error)) from error
+        if isinstance(error, WorkflowCommandIdempotencyConflictError):
+            raise WorkflowIdempotencyConflictError from error
+        raise error
 
     @staticmethod
     async def _append_event(
@@ -881,6 +812,9 @@ class AlertWorkflowService:
             existing.action != resume.action
             or existing.comment != resume.comment
             or existing.actor != resume.actor
+            or existing.actor_source != resume.actor_source
+            or existing.actor_subject != resume.actor_subject
+            or existing.actor_display_name != resume.actor_display_name
         ):
             raise WorkflowIdempotencyConflictError
 

@@ -14,6 +14,7 @@ from app.integrations.knowledge.dify import (
     DifyKnowledgeAdapter,
     DifyKnowledgeConfig,
     DifyResponseError,
+    DifyVectorDimensionMismatchError,
     KnowledgeProviderError,
 )
 from app.integrations.knowledge.factory import get_knowledge_retriever
@@ -276,6 +277,47 @@ async def test_dify_publisher_reports_terminal_indexing_failure_without_detail()
 
 
 @pytest.mark.asyncio
+async def test_dify_publisher_classifies_vector_dimension_mismatch_without_raw_detail() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/documents"):
+            return httpx.Response(200, json={"data": []})
+        if request.url.path.endswith("/create-by-text"):
+            return httpx.Response(
+                200,
+                json={
+                    "document": {
+                        "id": DOCUMENT_ID,
+                        "name": "alert-sage-case.md",
+                        "indexing_status": "waiting",
+                    },
+                    "batch": "batch-dimension-mismatch-001",
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "id": DOCUMENT_ID,
+                "name": "alert-sage-case.md",
+                "indexing_status": "error",
+                "error": (
+                    "dataset-test-secret: vectors diamensions does not fit "
+                    "[trace-id:provider-internal]"
+                ),
+            },
+        )
+
+    adapter = dify_adapter(httpx.MockTransport(handler))
+    with pytest.raises(DifyVectorDimensionMismatchError) as captured:
+        await adapter.publish(case_document(), idempotency_key="case-sync:test")
+
+    assert str(captured.value) == (
+        "Dify vector index dimension does not match the configured embedding model"
+    )
+    assert "dataset-test-secret" not in str(captured.value)
+    assert "provider-internal" not in str(captured.value)
+
+
+@pytest.mark.asyncio
 async def test_dify_retriever_normalizes_chunks_and_retries_transient_failure() -> None:
     attempts = 0
 
@@ -347,19 +389,28 @@ def test_dify_settings_require_secret_and_valid_dataset_id() -> None:
     with pytest.raises(ValidationError, match="DIFY_API_KEY"):
         Settings(
             _env_file=None,
+            runtime_profile="real",
+            component_role="api",
             knowledge_provider="dify",
+            diagnostic_model_provider="deepseek",
             dify_dataset_id=DATASET_ID,
         )
     with pytest.raises(ValidationError, match="must be a UUID"):
         Settings(
             _env_file=None,
+            runtime_profile="real",
+            component_role="api",
             knowledge_provider="dify",
+            diagnostic_model_provider="deepseek",
             dify_api_key="dataset-secret",
             dify_dataset_id="not-a-uuid",
         )
     settings = Settings(
         _env_file=None,
+        runtime_profile="real",
+        component_role="api",
         knowledge_provider="dify",
+        diagnostic_model_provider="deepseek",
         dify_api_key="dataset-secret",
         dify_dataset_id=DATASET_ID,
     )
@@ -370,7 +421,10 @@ def test_dify_settings_validate_evaluation_dataset_id() -> None:
     with pytest.raises(ValidationError, match="DIFY_EVALUATION_DATASET_ID must be a UUID"):
         Settings(
             _env_file=None,
+            runtime_profile="real",
+            component_role="api",
             knowledge_provider="dify",
+            diagnostic_model_provider="deepseek",
             dify_api_key="dataset-secret",
             dify_dataset_id=DATASET_ID,
             dify_evaluation_dataset_id="not-a-uuid",

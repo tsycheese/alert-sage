@@ -108,6 +108,43 @@ OUTBOX_RETRY_DELAY = Histogram(
     ("topic",),
     buckets=(1, 2, 5, 10, 30, 60, 120, 300),
 )
+FEISHU_CALLBACKS = Counter(
+    "alert_sage_feishu_callbacks_total",
+    "Feishu callbacks by bounded result.",
+    ("result",),
+)
+FEISHU_CALLBACK_DURATION = Histogram(
+    "alert_sage_feishu_callback_duration_seconds",
+    "Feishu callback processing duration.",
+    ("result",),
+    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 3),
+)
+FEISHU_DELIVERIES = Counter(
+    "alert_sage_feishu_deliveries_total",
+    "Feishu card deliveries by kind, operation and bounded result.",
+    ("kind", "operation", "result"),
+)
+FEISHU_DELIVERY_DURATION = Histogram(
+    "alert_sage_feishu_delivery_duration_seconds",
+    "Feishu card delivery duration.",
+    ("kind", "operation"),
+    buckets=(0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30),
+)
+FEISHU_RATE_LIMITS = Counter(
+    "alert_sage_feishu_rate_limits_total",
+    "Feishu API rate-limit responses by operation.",
+    ("operation",),
+)
+FEISHU_TOKEN_REFRESHES = Counter(
+    "alert_sage_feishu_token_refreshes_total",
+    "Feishu tenant token refreshes by result.",
+    ("result",),
+)
+FEISHU_PENDING_DELIVERY_SNAPSHOT = Histogram(
+    "alert_sage_feishu_pending_delivery_snapshot",
+    "Sampled count of Feishu delivery rows still pending or processing.",
+    buckets=(0, 1, 2, 5, 10, 25, 50, 100, 250, 500),
+)
 
 
 def label_value(value: object) -> str:
@@ -241,3 +278,33 @@ def observe_outbox_delivery(
             OUTBOX_RETRY_DELAY.labels(topic=topic).observe(retry_delay_seconds)
 
     _record(record)
+
+
+def observe_feishu_callback(*, result: str, duration_seconds: float) -> None:
+    def record() -> None:
+        FEISHU_CALLBACKS.labels(result=result).inc()
+        FEISHU_CALLBACK_DURATION.labels(result=result).observe(duration_seconds)
+
+    _record(record)
+
+
+def observe_feishu_delivery(
+    *, kind: str, operation: str, result: str, duration_seconds: float
+) -> None:
+    def record() -> None:
+        FEISHU_DELIVERIES.labels(kind=kind, operation=operation, result=result).inc()
+        FEISHU_DELIVERY_DURATION.labels(kind=kind, operation=operation).observe(duration_seconds)
+
+    _record(record)
+
+
+def observe_feishu_rate_limit(*, operation: str) -> None:
+    _record(lambda: FEISHU_RATE_LIMITS.labels(operation=operation).inc())
+
+
+def observe_feishu_token_refresh(*, result: str) -> None:
+    _record(lambda: FEISHU_TOKEN_REFRESHES.labels(result=result).inc())
+
+
+def observe_feishu_pending_deliveries(count: int) -> None:
+    _record(lambda: FEISHU_PENDING_DELIVERY_SNAPSHOT.observe(max(0, count)))

@@ -31,6 +31,8 @@ PostgreSQL 和 Redis 使用该 project 独有的临时 Volume。每次运行前�
 
 API 与 Worker 继承 V2.7A 的离线边界：知识和模型供应商均为 Mock，云端密钥在容器内清空，只有 Worker 注入 `logs` 工具超时。因此 E2E 不依赖 Dify Cloud、DeepSeek 或外部网络。
 
+Compose 覆盖显式使用 `demo` Profile；后端 pytest 显式使用 `test` Profile。两者都拒绝非空云端凭据和飞书开关，防止 CI 或开发机环境变量让自动化测试意外访问外网。
+
 ## 3. 安装与运行
 
 根目录 Playwright 当前固定为 `1.60.0`，传递依赖由 `package-lock.json` 锁定；升级时必须同步安装对应 Chromium 并重新执行两轮隔离验收。首次运行需要：

@@ -6,6 +6,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.config import Settings, get_settings
+from app.integrations.feishu.coordination import schedule_card_sync
 from app.integrations.knowledge.cases import CaseDocument, CasePublisher
 from app.models.case import Case
 from app.models.diagnosis import DiagnosisReport
@@ -63,10 +65,12 @@ class CaseSyncService:
         session_factory: async_sessionmaker[AsyncSession],
         publisher: CasePublisher,
         timeout_seconds: float = 5.0,
+        settings: Settings | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.publisher = publisher
         self.timeout_seconds = timeout_seconds
+        self.settings = settings or get_settings()
 
     async def prepare_retry(self, case_id: UUID, *, enqueue: bool = True) -> bool:
         async with self.session_factory() as session:
@@ -100,6 +104,15 @@ class CaseSyncService:
                         "thread_id": run.thread_id,
                         "case_id": case.id,
                     },
+                )
+            workflow_run_id = await self._workflow_run_id(session, case.diagnosis_report_id)
+            run = await session.get(WorkflowRun, workflow_run_id)
+            if run is not None:
+                await schedule_card_sync(
+                    session,
+                    alert_id=run.alert_id,
+                    reason=f"case-retry-{case.id}-{case.knowledge_sync_attempt + 1}",
+                    settings=self.settings,
                 )
             await session.commit()
             return True
@@ -174,6 +187,12 @@ class CaseSyncService:
                 tags=case.tags,
             )
             attempt = case.knowledge_sync_attempt
+            await schedule_card_sync(
+                session,
+                alert_id=run.alert_id,
+                reason=f"case-syncing-{case.id}-attempt-{attempt}",
+                settings=self.settings,
+            )
             await session.commit()
             return document, workflow_run_id, attempt
 
@@ -206,6 +225,12 @@ class CaseSyncService:
                     "external_document_id": external_document_id,
                 },
             )
+            await schedule_card_sync(
+                session,
+                alert_id=run.alert_id,
+                reason=f"case-synced-{case.id}-attempt-{attempt}",
+                settings=self.settings,
+            )
             await session.commit()
 
     async def _mark_failed(
@@ -234,6 +259,12 @@ class CaseSyncService:
                     "attempt": attempt,
                     "error_code": case.sync_error_code,
                 },
+            )
+            await schedule_card_sync(
+                session,
+                alert_id=run.alert_id,
+                reason=f"case-failed-{case.id}-attempt-{attempt}",
+                settings=self.settings,
             )
             await session.commit()
 

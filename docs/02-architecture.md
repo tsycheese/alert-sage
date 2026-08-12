@@ -24,6 +24,7 @@
 | 第一版 RAG | Dify Knowledge Base API | 文档管理、分段和检索 |
 | 进阶 RAG | pgvector | 自研混合检索与效果对比 |
 | 可观测性 | Prometheus、Grafana、结构化日志 | 指标、看板和排障 |
+| 交互渠道 | 飞书企业自建应用、卡片 JSON 2.0 | 群通知、主要状态和人工命令入口 |
 | 交付 | Docker Compose | 本地一键启动 |
 | 测试 | pytest、Playwright | 单元、集成和端到端测试 |
 
@@ -88,11 +89,18 @@ Prometheus 和 Grafana 只保存可重建的运行观测数据，不作为告警
 
 V2.3 只使用 Counter 和 Histogram，避免 Python 多进程模式不支持或语义受限的 Gauge、Info、自定义 Collector 与 exemplar。所有标签来自固定枚举或声明式路由模板；禁止将 `alert_id`、`workflow_run_id`、实例、任意服务名、检索问题、错误正文或文档 ID 放入指标标签。详细决策见 [ADR 0008](adr/0008-prometheus-grafana-observability.md)。
 
+### 3.6 运行 Profile 与飞书定位
+
+`real/demo/test` Profile 无默认值，供应商选择不再从日志环境推断。真实模式必须使用 DeepSeek 与 Dify；离线模式必须使用 Mock 且拒绝云端密钥。API、Worker 和 Relay 按角色接收最小配置，Relay 不获取供应商或飞书凭据。详细决策见 [ADR 0012](adr/0012-explicit-runtime-profiles.md)。
+
+飞书是可替换的交互适配器，不是告警、运行或决策的事实来源。回调验证、审计事实、工作流命令与 Outbox 在 PostgreSQL 事务中提交；发送端从数据库读取最新状态渲染 revision 卡片。详细决策见 [ADR 0013](adr/0013-feishu-reliable-interaction-channel.md)。
+
 ## 4. 总体架构
 
 ```mermaid
 flowchart TB
     WEB["React Web"] --> API["FastAPI"]
+    FEISHU["飞书群卡片"] -->|签名 + AES 回调| API
     API --> PG["PostgreSQL 业务数据 + Outbox"]
     API --> SSE["SSE 事件接口"]
 
@@ -109,6 +117,7 @@ flowchart TB
     GRAPH --> LLM["OpenAI-compatible LLM API"]
     GRAPH --> PG
     WORKER --> CASE_PUBLISHER["CasePublisher"]
+    WORKER -->|发送 / PATCH / 私有提醒| FEISHU
     CASE_PUBLISHER --> DIFY
 
     PROM["Prometheus"] -->|pull| API
@@ -159,6 +168,9 @@ V2.1 已定义以下告警、工作流、案例与知识接口：
 | `GET` | `/api/v1/alerts/{id}/case` | 查询批准后生成的案例与知识同步状态 |
 | `POST` | `/api/v1/alerts/{id}/case/retry` | 重试失败的案例知识同步 |
 | `POST` | `/api/v1/knowledge/search` | 使用统一协议检索知识片段并返回来源 |
+| `POST` | `/api/v1/integrations/feishu/card-actions` | 验证、解密并幂等处理卡片动作 |
+| `GET` | `/api/v1/alerts/{id}/feishu` | 查询飞书 eligibility、revision 与渠道错误 |
+| `POST` | `/api/v1/alerts/{id}/feishu/retry` | 重新投递失败的最新共享卡片 |
 
 ### 6.1 告警接入契约
 
@@ -244,7 +256,7 @@ API 为每个请求生成 UUID `request_id`，在响应 `X-Request-ID` 中返回
 
 ### 6.5 V2.5 事务性 Outbox
 
-工作流启动、人工恢复、失败重试和案例同步均在业务事实变更的同一事务中创建严格类型的 Outbox 消息。API 的兼容字段 `dispatched` 表示“本次请求新建了持久化投递意图”，不表示 Redis 已确认接收；幂等重放返回 `false`。
+工作流启动、人工恢复、失败重试、案例同步、飞书共享卡片和私有提醒均在业务事实变更的同一事务中创建严格类型的 Outbox 消息。API 的兼容字段 `dispatched` 表示“本次请求新建了持久化投递意图”，不表示 Redis 已确认接收；幂等重放返回 `false`。
 
 Relay 使用 `FOR UPDATE SKIP LOCKED` 分批领取到期消息。发布失败保持 `pending`，仅记录脱敏错误类型，并以有上限的指数退避重试；发布成功但数据库提交前崩溃时允许重复投递，因此整体为至少一次语义。消费者通过业务状态锁、唯一约束、事件幂等键和供应商幂等键吸收重复。详细决策见 [ADR 0010](adr/0010-transactional-outbox.md)。
 

@@ -7,13 +7,13 @@ from sqlalchemy import func, select
 from app.models.enums import OutboxStatus, OutboxTopic
 from app.models.outbox import OutboxMessage
 from app.models.workflow import WorkflowRun
+from app.services import workflow_commands as workflow_command_module
 from app.services.outbox import (
     OutboxEnqueueConflictError,
     OutboxRelayService,
     enqueue_outbox_message,
 )
 from app.tasks import outbox as outbox_tasks
-from app.workflows.alert import service as workflow_service_module
 from app.workflows.alert.service import AlertWorkflowService
 from tests.conftest import IsolatedTestDatabase
 from tests.test_alert_workflow_runtime import create_runtime_alert
@@ -138,7 +138,7 @@ async def test_workflow_and_delivery_intent_commit_atomically(
         raise RuntimeError("simulated outbox write failure")
 
     monkeypatch.setattr(
-        workflow_service_module,
+        workflow_command_module,
         "enqueue_outbox_message",
         reject_enqueue,
     )
