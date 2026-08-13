@@ -1,0 +1,751 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Alert Sage 真实运行 Profile 与飞书告警闭环阶段说明">
+  <title>Alert Sage｜阶段说明</title>
+  <style>
+    :root {
+      --ink: #13211d;
+      --muted: #61706a;
+      --paper: #f3f2eb;
+      --panel: #fbfaf5;
+      --line: #d8d8cf;
+      --green: #12684f;
+      --green-soft: #dcebe2;
+      --lime: #c6ef65;
+      --orange: #e76f3d;
+      --orange-soft: #f6dfd3;
+      --navy: #172832;
+      --white: #fffef9;
+      --shadow: 0 22px 55px rgba(20, 43, 34, .09);
+      --radius: 22px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 9% 3%, rgba(198, 239, 101, .21), transparent 27rem),
+        linear-gradient(180deg, #eeeee6 0, var(--paper) 31rem);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, a { font: inherit; }
+    a { color: inherit; }
+    .shell { width: min(1180px, calc(100% - 40px)); margin: 0 auto; }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      border-bottom: 1px solid rgba(19, 33, 29, .1);
+      background: rgba(243, 242, 235, .88);
+      backdrop-filter: blur(18px);
+    }
+
+    .topbar-inner {
+      min-height: 68px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      font-weight: 800;
+      letter-spacing: -.02em;
+      text-decoration: none;
+    }
+
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 11px;
+      color: var(--white);
+      background: var(--green);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .2);
+    }
+
+    .brand-mark::before {
+      content: "A";
+      font-family: Georgia, serif;
+      font-size: 19px;
+      font-weight: 800;
+    }
+
+    nav { display: flex; gap: 8px; }
+    nav a {
+      padding: 8px 12px;
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+      text-decoration: none;
+      transition: .2s ease;
+    }
+    nav a:hover, nav a.active { color: var(--ink); background: var(--white); }
+
+    .print-button {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 8px 14px;
+      background: transparent;
+      color: var(--ink);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 750;
+    }
+    .print-button:hover { background: var(--white); }
+
+    .hero { padding: 84px 0 54px; }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 20px;
+      color: var(--green);
+      font-size: 12px;
+      font-weight: 850;
+      letter-spacing: .13em;
+      text-transform: uppercase;
+    }
+    .eyebrow::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--lime);
+      box-shadow: 0 0 0 5px rgba(198, 239, 101, .25);
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+    h1 {
+      max-width: 900px;
+      margin-bottom: 24px;
+      font-family: Georgia, "Noto Serif SC", "Songti SC", serif;
+      font-size: clamp(46px, 7vw, 88px);
+      line-height: .98;
+      letter-spacing: -.055em;
+      font-weight: 600;
+    }
+    h1 em { color: var(--green); font-style: normal; }
+
+    .hero-lead {
+      max-width: 760px;
+      color: #46534e;
+      font-size: clamp(17px, 2vw, 21px);
+      line-height: 1.7;
+    }
+
+    .hero-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 32px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 6px 12px;
+      border: 1px solid rgba(18, 104, 79, .18);
+      border-radius: 999px;
+      color: var(--green);
+      background: rgba(255, 254, 249, .72);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .pill.dark { color: var(--white); border-color: var(--navy); background: var(--navy); }
+
+    .scoreboard {
+      display: grid;
+      grid-template-columns: 1.4fr repeat(4, 1fr);
+      overflow: hidden;
+      margin-top: 58px;
+      border: 1px solid #293b35;
+      border-radius: var(--radius);
+      color: var(--white);
+      background: var(--navy);
+      box-shadow: var(--shadow);
+    }
+    .score-intro, .score {
+      min-height: 154px;
+      padding: 25px;
+      border-right: 1px solid rgba(255, 255, 255, .12);
+    }
+    .score:last-child { border-right: 0; }
+    .score-intro { display: flex; flex-direction: column; justify-content: space-between; }
+    .score-intro strong { font-family: Georgia, serif; font-size: 25px; font-weight: 500; }
+    .score-intro span { color: #a8b7b0; font-size: 12px; }
+    .score b {
+      display: block;
+      color: var(--lime);
+      font-family: Georgia, serif;
+      font-size: 44px;
+      line-height: 1;
+      font-weight: 500;
+    }
+    .score span { display: block; margin-top: 17px; color: #c6d0cc; font-size: 12px; }
+
+    section { padding: 76px 0; scroll-margin-top: 72px; }
+    .section-head {
+      display: grid;
+      grid-template-columns: .55fr 1.45fr;
+      gap: 42px;
+      align-items: end;
+      margin-bottom: 36px;
+    }
+    .section-index { color: var(--orange); font: 700 13px/1 monospace; letter-spacing: .12em; }
+    h2 {
+      margin-bottom: 0;
+      font-family: Georgia, "Noto Serif SC", "Songti SC", serif;
+      font-size: clamp(34px, 5vw, 58px);
+      line-height: 1.06;
+      letter-spacing: -.035em;
+      font-weight: 600;
+    }
+    .section-copy { max-width: 720px; margin: 18px 0 0; color: var(--muted); }
+
+    .architecture {
+      padding: 32px;
+      border-radius: 28px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+    .arch-row {
+      display: grid;
+      grid-template-columns: 1fr 36px 1.15fr 36px 1fr 36px 1fr;
+      align-items: stretch;
+      gap: 10px;
+    }
+    .arch-node {
+      min-height: 145px;
+      padding: 20px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--white);
+    }
+    .arch-node.primary { color: var(--white); border-color: var(--green); background: var(--green); }
+    .arch-node small { display: block; margin-bottom: 36px; color: var(--muted); font: 700 11px/1 monospace; text-transform: uppercase; }
+    .arch-node.primary small { color: #b7d2c7; }
+    .arch-node h3 { margin-bottom: 8px; font-size: 18px; }
+    .arch-node p { margin: 0; color: var(--muted); font-size: 12px; }
+    .arch-node.primary p { color: #d6e4df; }
+    .arrow { display: grid; place-items: center; color: var(--orange); font-size: 22px; font-weight: 900; }
+
+    .truth-strip {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      overflow: hidden;
+      margin-top: 18px;
+      border-radius: 18px;
+      background: var(--line);
+    }
+    .truth-strip > div { padding: 20px 24px; background: #edf2eb; }
+    .truth-strip > div:last-child { background: #f5ebe4; }
+    .truth-strip b { display: block; margin-bottom: 4px; font-size: 13px; }
+    .truth-strip span { color: var(--muted); font-size: 12px; }
+
+    .profiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    .profile-card {
+      position: relative;
+      min-height: 250px;
+      padding: 25px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+    }
+    .profile-card.recommended { color: var(--white); border-color: var(--green); background: var(--green); }
+    .profile-card .profile-name { font: 500 38px/1 Georgia, serif; }
+    .profile-card .profile-use { margin-top: 8px; color: var(--muted); font-size: 12px; }
+    .profile-card.recommended .profile-use { color: #c5d9d1; }
+    .profile-card ul { margin: 34px 0 0; padding: 0; list-style: none; }
+    .profile-card li { padding: 8px 0; border-top: 1px solid rgba(97, 112, 106, .2); font-size: 13px; }
+    .profile-card.recommended li { border-color: rgba(255, 255, 255, .18); }
+    .tag {
+      position: absolute;
+      top: 18px;
+      right: 18px;
+      padding: 5px 8px;
+      border-radius: 6px;
+      color: var(--green);
+      background: var(--lime);
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: .08em;
+    }
+
+    .journey {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 0;
+      counter-reset: stage;
+    }
+    .journey-step { position: relative; padding: 54px 18px 20px 0; border-top: 2px solid var(--line); }
+    .journey-step::before {
+      counter-increment: stage;
+      content: counter(stage, decimal-leading-zero);
+      position: absolute;
+      top: -17px;
+      left: 0;
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      color: var(--white);
+      background: var(--green);
+      font: 700 10px/1 monospace;
+    }
+    .journey-step::after {
+      content: "";
+      position: absolute;
+      top: -2px;
+      left: 17px;
+      width: calc(100% - 17px);
+      height: 2px;
+      background: var(--green);
+      opacity: .45;
+    }
+    .journey-step:last-child::after { display: none; }
+    .journey-step h3 { margin-bottom: 8px; font-size: 15px; }
+    .journey-step p { color: var(--muted); font-size: 12px; }
+
+    .decision-box {
+      display: grid;
+      grid-template-columns: 1fr 1.4fr;
+      gap: 1px;
+      overflow: hidden;
+      margin-top: 28px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--line);
+    }
+    .decision-aside { padding: 28px; color: var(--white); background: var(--navy); }
+    .decision-aside b { display: block; color: var(--lime); font: 500 27px/1.15 Georgia, serif; }
+    .decision-aside p { margin: 18px 0 0; color: #b8c4bf; font-size: 13px; }
+    .decision-actions { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--panel); }
+    .decision-actions div { padding: 28px 20px; border-right: 1px solid var(--line); }
+    .decision-actions div:last-child { border: 0; }
+    .decision-actions strong { display: block; margin-bottom: 8px; color: var(--green); }
+    .decision-actions span { color: var(--muted); font-size: 12px; }
+
+    .principles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+    .principle {
+      padding: 26px;
+      border-top: 4px solid var(--green);
+      border-radius: 0 0 var(--radius) var(--radius);
+      background: var(--panel);
+      box-shadow: 0 14px 35px rgba(20, 43, 34, .05);
+    }
+    .principle:nth-child(2), .principle:nth-child(3) { border-color: var(--orange); }
+    .principle-code { color: var(--muted); font: 700 11px/1 monospace; }
+    .principle h3 { margin: 24px 0 10px; font-size: 18px; }
+    .principle p { margin: 0; color: var(--muted); font-size: 13px; }
+
+    .evidence-wrap {
+      overflow: hidden;
+      border: 1px solid #2a3b35;
+      border-radius: var(--radius);
+      color: var(--white);
+      background: var(--navy);
+      box-shadow: var(--shadow);
+    }
+    .evidence-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 22px 26px;
+      border-bottom: 1px solid rgba(255, 255, 255, .12);
+    }
+    .evidence-head strong { font-family: Georgia, serif; font-size: 22px; font-weight: 500; }
+    .status-pass { color: var(--lime); font: 800 11px/1 monospace; letter-spacing: .08em; }
+    .evidence-table { width: 100%; border-collapse: collapse; }
+    .evidence-table th, .evidence-table td { padding: 17px 26px; text-align: left; border-bottom: 1px solid rgba(255, 255, 255, .09); }
+    .evidence-table th { color: #8fa099; font: 700 10px/1 monospace; letter-spacing: .1em; text-transform: uppercase; }
+    .evidence-table td { font-size: 13px; }
+    .evidence-table tr:last-child td { border-bottom: 0; }
+    .evidence-table td:nth-child(2) { color: var(--lime); font-weight: 800; }
+    .evidence-table td:last-child { color: #b9c6c0; }
+
+    .boundary-grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 18px; }
+    .boundary-main, .boundary-side { padding: 30px; border-radius: var(--radius); }
+    .boundary-main { background: var(--orange-soft); }
+    .boundary-side { color: var(--white); background: var(--green); }
+    .boundary-main h3, .boundary-side h3 { font: 500 27px/1.2 Georgia, serif; }
+    .boundary-main ul, .boundary-side ul { margin: 24px 0 0; padding-left: 19px; }
+    .boundary-main li, .boundary-side li { margin: 10px 0; font-size: 13px; }
+    .boundary-side li { color: #d5e5df; }
+
+    .closeout {
+      display: grid;
+      grid-template-columns: 1.4fr .6fr;
+      gap: 22px;
+      align-items: end;
+      margin: 70px 0 34px;
+      padding: 40px;
+      border-radius: 28px;
+      background: var(--lime);
+    }
+    .closeout h2 { max-width: 700px; font-size: clamp(34px, 5vw, 58px); }
+    .commit { justify-self: end; text-align: right; }
+    .commit span { display: block; color: #475b39; font: 700 10px/1 monospace; letter-spacing: .1em; }
+    .commit code { display: block; margin-top: 10px; font: 800 15px/1.4 monospace; }
+
+    footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 28px 0 44px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .reveal { opacity: 0; transform: translateY(14px); transition: opacity .55s ease, transform .55s ease; }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .reveal { opacity: 1; transform: none; transition: none; }
+    }
+
+    @media (max-width: 900px) {
+      nav { display: none; }
+      .scoreboard { grid-template-columns: repeat(2, 1fr); }
+      .score-intro { grid-column: 1 / -1; }
+      .score:nth-child(odd) { border-right: 0; }
+      .arch-row { grid-template-columns: 1fr; }
+      .arrow { min-height: 25px; transform: rotate(90deg); }
+      .profiles { grid-template-columns: 1fr; }
+      .journey { grid-template-columns: repeat(2, 1fr); gap: 28px 0; }
+      .decision-box, .boundary-grid { grid-template-columns: 1fr; }
+      .section-head { grid-template-columns: 1fr; gap: 18px; }
+    }
+
+    @media (max-width: 620px) {
+      .shell { width: min(100% - 24px, 1180px); }
+      .hero { padding-top: 58px; }
+      h1 { font-size: 48px; }
+      .scoreboard, .principles, .truth-strip, .decision-actions, .closeout { grid-template-columns: 1fr; }
+      .score, .score-intro { min-height: auto; border-right: 0; border-bottom: 1px solid rgba(255, 255, 255, .12); }
+      .score:last-child { border-bottom: 0; }
+      .journey { grid-template-columns: 1fr; }
+      .architecture { padding: 18px; }
+      .evidence-table th:nth-child(3), .evidence-table td:nth-child(3) { display: none; }
+      .evidence-table th, .evidence-table td { padding: 15px 17px; }
+      .closeout { padding: 28px; }
+      .commit { justify-self: start; text-align: left; }
+      footer { flex-direction: column; }
+    }
+
+    @media print {
+      :root { --paper: #fff; --panel: #fff; }
+      body { background: #fff; }
+      .topbar, .print-button { display: none; }
+      .shell { width: 100%; max-width: none; }
+      .hero { padding-top: 30px; }
+      section { padding: 35px 0; break-inside: avoid; }
+      .reveal { opacity: 1; transform: none; }
+      .scoreboard, .architecture, .evidence-wrap { box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="shell topbar-inner">
+      <a class="brand" href="#top" aria-label="返回顶部">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>Alert Sage</span>
+      </a>
+      <nav aria-label="页面目录">
+        <a href="#architecture">架构</a>
+        <a href="#profiles">Profiles</a>
+        <a href="#workflow">飞书闭环</a>
+        <a href="#evidence">验收</a>
+        <a href="#boundaries">边界</a>
+      </nav>
+      <button class="print-button" type="button" onclick="window.print()">打印 / PDF</button>
+    </div>
+  </header>
+
+  <main id="top">
+    <div class="shell hero">
+      <p class="eyebrow">Stage closeout · 2026.08</p>
+      <h1>从确定性演示，推进到<em>真实运行闭环</em></h1>
+      <p class="hero-lead">
+        Alert Sage 本阶段不是“删除 Mock”，而是建立清晰的运行边界：真实环境显式调用
+        DeepSeek 与 Dify，Demo 与测试继续保持离线可复现；飞书成为可靠交互渠道，但业务事实、
+        幂等与状态机仍统一留在后端。
+      </p>
+      <div class="hero-meta" aria-label="阶段标签">
+        <span class="pill dark">REAL PROFILE VERIFIED</span>
+        <span class="pill">FEISHU LIVE ACCEPTED</span>
+        <span class="pill">NO SILENT MOCK FALLBACK</span>
+        <span class="pill">POSTGRESQL AS SOURCE OF TRUTH</span>
+      </div>
+
+      <div class="scoreboard reveal" aria-label="最终质量门禁摘要">
+        <div class="score-intro">
+          <strong>最终工程门禁</strong>
+          <span>默认门禁保持离线，不读取云端密钥</span>
+        </div>
+        <div class="score"><b>146</b><span>后端测试通过</span></div>
+        <div class="score"><b>14</b><span>前端测试通过</span></div>
+        <div class="score"><b>1</b><span>Playwright 主路径通过</span></div>
+        <div class="score"><b>0</b><span>生产依赖漏洞</span></div>
+      </div>
+    </div>
+
+    <section id="architecture">
+      <div class="shell">
+        <div class="section-head">
+          <span class="section-index">01 / ARCHITECTURE</span>
+          <div>
+            <h2>渠道可以新增，事实来源不能漂移</h2>
+            <p class="section-copy">飞书和 Web 都只是命令入口与状态投影。告警、报告、人工决策、案例和投递意图，最终都由 PostgreSQL 约束。</p>
+          </div>
+        </div>
+
+        <div class="architecture reveal">
+          <div class="arch-row" aria-label="系统架构流">
+            <article class="arch-node">
+              <small>Channels</small>
+              <h3>Web + 飞书</h3>
+              <p>创建告警、手动启动、批准、驳回与重新分析。</p>
+            </article>
+            <div class="arrow" aria-hidden="true">→</div>
+            <article class="arch-node primary">
+              <small>Command boundary</small>
+              <h3>FastAPI + 事务核心</h3>
+              <p>签名校验、权限白名单、状态锁、幂等约束与 Outbox 同事务提交。</p>
+            </article>
+            <div class="arrow" aria-hidden="true">→</div>
+            <article class="arch-node">
+              <small>Durable truth</small>
+              <h3>PostgreSQL</h3>
+              <p>业务事实、审计记录、LangGraph checkpoint 与投递意图。</p>
+            </article>
+            <div class="arrow" aria-hidden="true">→</div>
+            <article class="arch-node">
+              <small>Async execution</small>
+              <h3>Celery + LangGraph</h3>
+              <p>异步诊断、人工中断恢复、卡片同步与案例发布。</p>
+            </article>
+          </div>
+          <div class="truth-strip">
+            <div><b>可丢失、可重建</b><span>Redis：队列、token 缓存、短期锁与广播</span></div>
+            <div><b>不可伪造、不可静默丢失</b><span>PostgreSQL：告警状态、决策、报告、案例与 Outbox</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="profiles">
+      <div class="shell">
+        <div class="section-head">
+          <span class="section-index">02 / RUNTIME PROFILES</span>
+          <div>
+            <h2>三种 Profile，没有模糊默认值</h2>
+            <p class="section-copy">启动配置必须表达真实意图。缺少 Profile、供应商混用或测试环境携带云端配置都会明确失败。</p>
+          </div>
+        </div>
+
+        <div class="profiles reveal">
+          <article class="profile-card recommended">
+            <span class="tag">LIVE</span>
+            <div class="profile-name">real</div>
+            <div class="profile-use">开发验收与真实运行</div>
+            <ul>
+              <li>强制 DeepSeek + Dify</li>
+              <li>飞书通过独立开关显式启用</li>
+              <li>配置缺失时拒绝启动</li>
+            </ul>
+          </article>
+          <article class="profile-card">
+            <div class="profile-name">demo</div>
+            <div class="profile-use">离线求职演示</div>
+            <ul>
+              <li>强制确定性 Mock</li>
+              <li>允许受控工具故障注入</li>
+              <li>拒绝飞书与云端密钥</li>
+            </ul>
+          </article>
+          <article class="profile-card">
+            <div class="profile-name">test</div>
+            <div class="profile-use">自动化质量门禁</div>
+            <ul>
+              <li>强制 Mock 且禁止外网</li>
+              <li>隔离 PostgreSQL schema</li>
+              <li>Playwright 使用独立 Compose</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="workflow">
+      <div class="shell">
+        <div class="section-head">
+          <span class="section-index">03 / FEISHU LOOP</span>
+          <div>
+            <h2>告警群里完成诊断与人工确认</h2>
+            <p class="section-copy">群卡片展示共享状态，私聊卡片提醒审批人。所有按钮都重新进入后端校验，不能绕过业务状态机。</p>
+          </div>
+        </div>
+
+        <div class="journey reveal" aria-label="飞书交互流程">
+          <article class="journey-step"><h3>告警接入</h3><p>warning / critical 且来源命中白名单时生成共享卡片意图。</p></article>
+          <article class="journey-step"><h3>群内通知</h3><p>Bot 发送单一公共卡片，包含严重级别、状态与 Web 链接。</p></article>
+          <article class="journey-step"><h3>手动启动</h3><p>群成员点击启动；行锁与活动运行唯一索引吸收竞争。</p></article>
+          <article class="journey-step"><h3>异步诊断</h3><p>queued → running，真实 DeepSeek + Dify 在 Worker 中运行。</p></article>
+          <article class="journey-step"><h3>等待确认</h3><p>共享卡片更新，审批白名单同时收到幂等私聊提醒。</p></article>
+          <article class="journey-step"><h3>最终收敛</h3><p>批准、驳回或重新分析；群卡片和私聊提醒进入终态。</p></article>
+        </div>
+
+        <div class="decision-box reveal">
+          <div class="decision-aside">
+            <b>Human-in-the-loop<br>不是一个按钮，而是一条可靠事务。</b>
+            <p>回调事实、业务命令与 Outbox 意图在同一个 PostgreSQL 事务中提交。</p>
+          </div>
+          <div class="decision-actions">
+            <div><strong>批准</strong><span>完成工作流，创建结构化案例并异步同步 Dify。</span></div>
+            <div><strong>驳回</strong><span>进入 rejected 终态，不伪造案例或知识同步结果。</span></div>
+            <div><strong>重新分析</strong><span>反馈必填、最长 1,000 字，每个运行最多三次。</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="shell">
+        <div class="section-head">
+          <span class="section-index">04 / RELIABILITY</span>
+          <div><h2>外部系统失败时，系统不编造成功</h2></div>
+        </div>
+        <div class="principles reveal">
+          <article class="principle"><span class="principle-code">R01 · IDEMPOTENCY</span><h3>重复投递只产生一个业务事实</h3><p>event ID、正文哈希、报告决策约束、告警行锁与活动运行唯一索引共同吸收重复事件、重复按钮和 Web/飞书竞争。</p></article>
+          <article class="principle"><span class="principle-code">R02 · OUTBOX</span><h3>状态事实与投递意图一起提交</h3><p>飞书失败不会回滚告警事实；Redis 或 Broker 暂时不可用时 Outbox 保持 pending，恢复后继续投递。</p></article>
+          <article class="principle"><span class="principle-code">R03 · REVISION</span><h3>旧卡片任务不能覆盖新状态</h3><p>Worker 从 PostgreSQL 读取最新状态渲染；desired / delivered revision 控制乱序，旧 nonce 点击会被拒绝。</p></article>
+          <article class="principle"><span class="principle-code">R04 · VENDOR FAILURE</span><h3>供应商故障保持可见</h3><p>DeepSeek 不可恢复失败进入 failed；Dify 检索失败标记知识缺失，案例同步保持独立状态并可重试。</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="evidence">
+      <div class="shell">
+        <div class="section-head">
+          <span class="section-index">05 / ACCEPTANCE</span>
+          <div>
+            <h2>真实调用通过，离线回归也保持稳定</h2>
+            <p class="section-copy">人工 live 证据与自动化契约覆盖分开记录，避免把只在测试里通过的边界误报为人工验收。</p>
+          </div>
+        </div>
+
+        <div class="evidence-wrap reveal">
+          <div class="evidence-head"><strong>2026-08-11 / 12 验收摘要</strong><span class="status-pass">ALL REQUIRED GATES PASSED</span></div>
+          <table class="evidence-table">
+            <thead><tr><th>范围</th><th>结果</th><th>证据</th></tr></thead>
+            <tbody>
+              <tr><td>DeepSeek + Dify</td><td>通过</td><td>合成 CPU 告警完成真实检索、结构化诊断与案例同步</td></tr>
+              <tr><td>飞书共享卡片</td><td>通过</td><td>通知、启动、状态更新、批准、驳回与最终通知</td></tr>
+              <tr><td>重新分析</td><td>通过</td><td>必填校验、第二份报告、最终批准和私聊终态收敛</td></tr>
+              <tr><td>Alembic</td><td>通过</td><td>空库至 0007；0007 → 0006 → 0007 回滚恢复</td></tr>
+              <tr><td>后端 / 前端</td><td>通过</td><td>pytest 146、Vitest 14、类型检查与生产构建</td></tr>
+              <tr><td>离线 E2E</td><td>通过</td><td>独立 Compose + Playwright 主路径，结束后自动清理</td></tr>
+              <tr><td>安全扫描</td><td>通过</td><td>.env 未跟踪；版本化内容未发现真实凭据或临时域名</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="boundaries">
+      <div class="shell">
+        <div class="section-head">
+          <span class="section-index">06 / BOUNDARIES</span>
+          <div><h2>这一阶段完成了什么，也明确没有承诺什么</h2></div>
+        </div>
+        <div class="boundary-grid reveal">
+          <article class="boundary-main">
+            <h3>明确延期：长期固定部署</h3>
+            <ul>
+              <li>固定 Linux VM、正式域名与公网回调</li>
+              <li>备份恢复、进程自启动与证书轮换演练</li>
+              <li>业务生产 Dataset 与真实业务告警验收</li>
+            </ul>
+          </article>
+          <article class="boundary-side">
+            <h3>不在本阶段范围</h3>
+            <ul>
+              <li>真实 Loki / 业务 Prometheus / CMDB</li>
+              <li>统一认证、完整 RBAC</li>
+              <li>多群、多 tenant 与通讯录权限</li>
+            </ul>
+          </article>
+        </div>
+
+        <div class="closeout reveal">
+          <div>
+            <p class="eyebrow">Stage complete</p>
+            <h2>系统已经从“可演示”跨到“可接入真实应用”。</h2>
+          </div>
+          <div class="commit">
+            <span>COMMIT</span>
+            <code>e6d95bf<br>real runtime + Feishu</code>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="shell">
+    <span>Alert Sage · AI 告警诊断助手</span>
+    <span>单文件阶段说明 · 不包含凭据与供应商正文</span>
+  </footer>
+
+  <script>
+    (() => {
+      const revealItems = document.querySelectorAll('.reveal');
+      const sectionLinks = [...document.querySelectorAll('nav a')];
+
+      if ('IntersectionObserver' in window) {
+        const revealObserver = new IntersectionObserver((entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('visible');
+              revealObserver.unobserve(entry.target);
+            }
+          });
+        }, { threshold: 0.12 });
+        revealItems.forEach((item) => revealObserver.observe(item));
+
+        const navObserver = new IntersectionObserver((entries) => {
+          entries.forEach((entry) => {
+            if (!entry.isIntersecting) return;
+            sectionLinks.forEach((link) => {
+              link.classList.toggle('active', link.getAttribute('href') === `#${entry.target.id}`);
+            });
+          });
+        }, { rootMargin: '-28% 0px -62% 0px' });
+        document.querySelectorAll('section[id]').forEach((section) => navObserver.observe(section));
+      } else {
+        revealItems.forEach((item) => item.classList.add('visible'));
+      }
+    })();
+  </script>
+</body>
+</html>
